@@ -1,0 +1,12 @@
+Minimal Production System
+=========================
+
+Introduction
+------------
+The Minimal Production System (MPS) started out as an experiment in Common Lisp
+macrology (the idea was to convert CLIPS syntax into executable Common Lisp
+code) but since things started to fall into place quite neatly. I thought maybe
+it would be worth implementing a subset of CLIPS syntax and functionality.
+
+There's a bit more info on my old blog // comments are lies! See
+http://commentsarelies.blogspot.com/search/label/MPS
