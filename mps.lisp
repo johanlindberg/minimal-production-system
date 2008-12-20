@@ -28,18 +28,30 @@
 (defparameter current-rule nil)
 
 ;;; Helper methods and macros
+;;; -------------------------
 (defun as-keyword (sym)
   "Returns <sym> as a keyword."
   (intern (string-upcase sym) :keyword))
 
 (defun make-sym (&rest parts)
+  "Makes a symbol of <parts>."
   (let ((sym ""))
     (dolist (part (mapcar #'string-upcase (mapcar #'string parts)))
       (setf sym (concatenate 'string sym part)))
     (intern sym)))
 
+;; Stolen from the Common Lisp Cookbook. See
+;; http://cl-cookbook.sourceforge.net/strings.html
+(defun split (string &optional (delimiter #\SPACE))
+  "Splits <string> into pieces separated by <delimiter>."
+  (loop for i = 0 then (1+ j)
+     as j = (position delimiter string :start i)
+     collect (subseq string i j)
+     while j))
+
 
 ;;; Conflict resolution strategies
+;;; ------------------------------
 (defun order-by-salience (conflict-set)
   (stable-sort conflict-set #'(lambda (activation1 activation2)
 				(> (activation-salience activation1)
@@ -61,6 +73,7 @@
 
 
 ;;; Inference engine implementation
+;;; -------------------------------
 (let* ((conflict-resolution-strategy #'depth)
        (rete-network (make-hash-table))
        (root-node (setf (gethash 'root rete-network) (make-hash-table)))
@@ -329,30 +342,64 @@
 (defmacro parse-ce (name conditional-element)
   (let ((ce-type (car conditional-element)))
     (case ce-type
+;      ('not `(parse-not-ce ,name ,conditional-element))
+;      ('test `(parse-test-ce ,name ,conditional-element))
       (otherwise `(parse-pattern-ce ,name ,conditional-element)))))
 
-(defmacro parse-assigned-pattern-ce (name variable pattern-ce)
-  `(parse-pattern-ce ,name ',pattern-ce ',variable))
-
 (defun contains-connective-constraints? (sym)
-  (or (position #\& (symbol-name sym))
-      (position #\~ (symbol-name sym))
-      (position #\| (symbol-name sym))))    
+  (or (position #\& (if (stringp sym) sym (symbol-name sym)))
+      (position #\~ (if (stringp sym) sym (symbol-name sym)))
+      (position #\| (if (stringp sym) sym (symbol-name sym)))))
 
-(defmacro parse-pattern-ce (name pattern-ce &optional (binding (gensym) explicitly-bound))
+(defun split (string &optional (delimiter #\SPACE))
+  (loop for i = 0 then (1+ j)
+     as j = (position delimiter string :start i)
+     collect (subseq string i j)
+     while j))
+
+(defun make-node (deftemplate-name slot-name pattern-constraint)
+  (let ((p (position #\~ (symbol-name pattern-constraint))))
+    (cond (p
+	   `(defun ,(make-sym deftemplate-name "-"
+			      slot-name "-is-not-"
+			      (subseq (symbol-name pattern-constraint) (+ p 1))) (key fact timestamp)
+	      (when (not (eq (,(make-sym deftemplate-name "-" slot-name) fact) ,(read-from-string (subseq (symbol-name pattern-constraint) (+ p 1)))))
+		(print (list key fact timestamp)))))
+	  (t
+	   `(defun ,(make-sym deftemplate-name "-"
+			      slot-name "-is-"
+			      (subseq (symbol-name pattern-constraint) p)) (key fact timestamp)
+	      (when (not (eq (,(make-sym deftemplate-name "-" slot-name) fact) ,(read-from-string (subseq (symbol-name pattern-constraint) p))))
+		(print (list key fact timestamp))))))))
+
+(defun generate-network-nodes (deftemplate-name slot)
+  (let ((slot-name (car slot))
+	(slot-value (cadr slot)))
+    ;; Generate a new node for each &-constraint, ~ and | are handled within the
+    ;; nodes. (fact (foo ?foo&~1&~2)) expands into fact-foo-is-not-1 and
+    ;; fact-foo-is-not-2
+    (dolist (constraint (split (symbol-name slot-value) #\&))
+      (let ((part (intern (string-upcase constraint))))
+	(unless (variable-p part)
+	  (eval (make-node deftemplate-name slot-name part)))))))
+
+(defmacro parse-assigned-pattern-ce (deftemplate-name variable pattern-ce)
   (declare (ignore name))
   `(progn
      ;; Update bindings
-     (push (list (if ,explicitly-bound ,binding ',binding) (length fact-bindings)) fact-bindings)
-     (dolist (slot (if ,explicitly-bound (cdr ,pattern-ce) (cdr ',pattern-ce)))
-       (let ((value (cadr slot))
-	     (slot-name (car slot))
-	     (template (if ,explicitly-bound (car ,pattern-ce) (car ',pattern-ce))))
-	 (when (variable-p value)
-	   (when (contains-connective-constraints? value)
-	     (do* ((pos (contains-connective-constraints? value) (contains-connective-constraints? val))
-		   (prev 0 (contains-connective-constraints? val))
-		   (val value (subseq val prev pos)))
-		  (pos t)
-	       (print val)))
-	   (push (list value template slot-name (if ,explicitly-bound ,binding ',binding)) variable-bindings))))))
+     (push (list ',variable (length fact-bindings)) fact-bindings)
+     (let ((slot-name (car ',pattern-ce))
+	   (slot-value (cadr ',pattern-ce)))
+       (generate-network-nodes ',deftemplate-name ',pattern-ce)
+       (push (list slot-value ',deftemplate-name slot-name ',variable) variable-bindings))))
+
+(defmacro parse-pattern-ce (deftemplate-name pattern-ce)
+  (declare (ignore name))
+  (let ((variable (gensym)))
+    `(progn
+       ;; Update bindings
+       (push (list ',variable (length fact-bindings)) fact-bindings)
+       (let ((slot-name (car ',pattern-ce))
+	     (slot-value (cadr ',pattern-ce)))
+	 (generate-network-nodes ',deftemplate-name ',pattern-ce)
+	 (push (list slot-value ',deftemplate-name slot-name ',variable) variable-bindings)))))
