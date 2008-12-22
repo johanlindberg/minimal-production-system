@@ -23,6 +23,9 @@
   salience token timestamp
   rhs-func prod-mem)
 
+(defparameter available-rules '())
+(defparameter available-templates '())
+
 (defparameter variable-bindings '())
 (defparameter fact-bindings '())
 (defparameter current-rule nil)
@@ -285,12 +288,12 @@
 ;;; defrule
 ;;;
 ;;; ---
-(defmacro compile-lhs (name &body lhs)
+(defmacro compile-lhs (rule-name &body lhs)
   `(progn
      (setf variable-bindings '())
      (setf fact-bindings '())
-     (setf current-rule ',name)
-     (parse ,name ,@lhs)))
+     (setf current-rule ',rule-name) ; This is never used!
+     (parse ,rule-name ,@lhs)))
 	   
 (defun make-variable-binding (binding)
   `(,(car binding) (,(make-sym "DEFTEMPLATE/" (cadr binding) "-" (caddr binding)) ,(cadddr binding))))
@@ -300,10 +303,10 @@
 	(position (cadr binding)))
     `(,variable (nth ,position token))))
 
-(defmacro compile-rhs (name &body rhs)
+(defmacro compile-rhs (rule-name &body rhs)
   (when (null rhs)
     (setf rhs '(t)))
-  `(defun ,(make-sym "RHS/" name) (activation)
+  `(defun ,(make-sym "RHS/" rule-name) (activation)
      (let* ((token (activation-token activation))
 	    ,@(mapcar #'make-fact-binding (reverse fact-bindings))
 	    ,@(mapcar #'make-variable-binding (reverse variable-bindings)))
@@ -326,25 +329,25 @@
 		(eq (char (string sym) 1) #\?))
 	   (eq (char (string sym) 0) #\?))))
 
-(defmacro parse (name &rest conditional-elements)
+(defmacro parse (rule-name &rest conditional-elements)
   (unless (eq (car conditional-elements) 'nil)
     (cond ((consp (car conditional-elements))
 	   `(progn
-	      (parse-ce ,name ,(car conditional-elements))
-	      (parse ,name ,@(cdr conditional-elements))))
+	      (parse-ce ,rule-name ,(car conditional-elements))
+	      (parse ,rule-name ,@(cdr conditional-elements))))
 	  ((variable-p (car conditional-elements))
 	   (progn
 	     (cl:assert (eq (cadr conditional-elements) '<-))
 	     `(progn
-		(parse-assigned-pattern-ce ,name ,(car conditional-elements) ,(caddr conditional-elements))
-		(parse ,name ,@(cdddr conditional-elements))))))))
+		(parse-pattern-ce ,rule-name ,(car conditional-elements) ,(caddr conditional-elements))
+		(parse ,rule-name ,@(cdddr conditional-elements))))))))
 
-(defmacro parse-ce (name conditional-element)
+(defmacro parse-ce (rule-name conditional-element)
   (let ((ce-type (car conditional-element)))
     (case ce-type
-;      ('not `(parse-not-ce ,name ,conditional-element))
-;      ('test `(parse-test-ce ,name ,conditional-element))
-      (otherwise `(parse-pattern-ce ,name ,conditional-element)))))
+;      ('not `(parse-not-ce ,rule-name ,conditional-element))
+;      ('test `(parse-test-ce ,rule-name ,conditional-element))
+      (otherwise `(parse-pattern-ce ,rule-name ,(gensym) ,conditional-element)))))
 
 (defun contains-connective-constraints? (sym)
   (or (position #\& (if (stringp sym) sym (symbol-name sym)))
@@ -372,34 +375,23 @@
 	      (when (not (eq (,(make-sym deftemplate-name "-" slot-name) fact) ,(read-from-string (subseq (symbol-name pattern-constraint) p))))
 		(print (list key fact timestamp))))))))
 
-(defun generate-network-nodes (deftemplate-name slot)
-  (let ((slot-name (car slot))
-	(slot-value (cadr slot)))
+(defun generate-network-nodes (deftemplate-name conditional-element variable)
+  (let* ((slot (cadr conditional-element))
+	 (slot-name (car slot))
+	 (slot-value (cadr slot)))
     ;; Generate a new node for each &-constraint, ~ and | are handled within the
     ;; nodes. (fact (foo ?foo&~1&~2)) expands into fact-foo-is-not-1 and
     ;; fact-foo-is-not-2
     (dolist (constraint (split (symbol-name slot-value) #\&))
       (let ((part (intern (string-upcase constraint))))
-	(unless (variable-p part)
-	  (eval (make-node deftemplate-name slot-name part)))))))
+	(if (variable-p part)
+	    (push (list part deftemplate-name slot-name variable) variable-bindings)
+	    (eval (make-node deftemplate-name slot-name part)))))))
 
-(defmacro parse-assigned-pattern-ce (deftemplate-name variable pattern-ce)
-  (declare (ignore name))
-  `(progn
-     ;; Update bindings
-     (push (list ',variable (length fact-bindings)) fact-bindings)
-     (let ((slot-name (car ',pattern-ce))
-	   (slot-value (cadr ',pattern-ce)))
-       (generate-network-nodes ',deftemplate-name ',pattern-ce)
-       (push (list slot-value ',deftemplate-name slot-name ',variable) variable-bindings))))
-
-(defmacro parse-pattern-ce (deftemplate-name pattern-ce)
-  (declare (ignore name))
-  (let ((variable (gensym)))
+(defmacro parse-pattern-ce (rule-name variable pattern-ce)
+  (declare (ignore rule-name))
+  (let ((deftemplate-name (car pattern-ce)))
     `(progn
        ;; Update bindings
        (push (list ',variable (length fact-bindings)) fact-bindings)
-       (let ((slot-name (car ',pattern-ce))
-	     (slot-value (cadr ',pattern-ce)))
-	 (generate-network-nodes ',deftemplate-name ',pattern-ce)
-	 (push (list slot-value ',deftemplate-name slot-name ',variable) variable-bindings)))))
+       (generate-network-nodes ',deftemplate-name ',pattern-ce ',variable))))
