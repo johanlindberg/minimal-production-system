@@ -361,19 +361,24 @@
      while j))
 
 (defun make-node (deftemplate-name slot-name pattern-constraint)
-  (let ((p (position #\~ (symbol-name pattern-constraint))))
+  (let* ((p (position #\~ (symbol-name pattern-constraint)))
+	 (v (subseq (symbol-name pattern-constraint) (+ p 1))))
     (cond (p
-	   `(defun ,(make-sym deftemplate-name "-"
-			      slot-name "-is-not-"
-			      (subseq (symbol-name pattern-constraint) (+ p 1))) (key fact timestamp)
-	      (when (not (eq (,(make-sym deftemplate-name "-" slot-name) fact) ,(read-from-string (subseq (symbol-name pattern-constraint) (+ p 1)))))
-		(print (list key fact timestamp)))))
+	   `(defun ,(make-sym "alpha/" deftemplate-name "-" slot-name "-is-not-" v) (key fact timestamp)
+	      (when (not (eq (,(make-sym "deftemplate/" deftemplate-name "-" slot-name) fact)
+			     ,(read-from-string v)))
+		(unless (consp fact)
+		  (setf fact (list fact)))
+		(store key fact ',(make-sym "memory/alpha/" deftemplate-name "-" slot-name "-is-not-" v))
+		(propagate key fact timestamp ',(make-sym "memory/alpha/" deftemplate-name "-" slot-name "-is-not-" v)))))
 	  (t
-	   `(defun ,(make-sym deftemplate-name "-"
-			      slot-name "-is-"
-			      (subseq (symbol-name pattern-constraint) p)) (key fact timestamp)
-	      (when (not (eq (,(make-sym deftemplate-name "-" slot-name) fact) ,(read-from-string (subseq (symbol-name pattern-constraint) p))))
-		(print (list key fact timestamp))))))))
+	   `(defun ,(make-sym "alpha/" deftemplate-name "-" slot-name "-is-" v) (key fact timestamp)
+	      (when (not (eq (,(make-sym "deftemplate/" deftemplate-name "-" slot-name) fact)
+			     ,(read-from-string v)))
+		(unless (consp fact)
+		  (setf fact (list fact)))
+		(store key fact ',(make-sym "memory/alpha/" deftemplate-name "-" slot-name "-is-not-" v))
+		(propagate key fact timestamp ',(make-sym "memory/alpha/" deftemplate-name "-" slot-name "-is-not-" v))))))))
 
 (defun generate-network-nodes (deftemplate-name conditional-element variable)
   (let* ((slot (cadr conditional-element))
