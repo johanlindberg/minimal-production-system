@@ -4,9 +4,13 @@ Minimal Production System
 Introduction
 ------------
 The Minimal Production System (MPS) started out as an experiment in Common Lisp
-macrology (the idea was to convert CLIPS syntax into executable Common Lisp
-code) but since things started to fall into place quite neatly. I thought maybe
-it would be worth implementing a subset of CLIPS syntax and functionality.
+macrology (the idea was to convert a subset of CLIPS syntax into executable
+Common Lisp code) but since the | character has special meaning to the Common
+Lisp reader it's difficult to implement the or-connective-constraint in
+pattern-CE's. So, instead I'll focus on implementing a production system using
+Common Lisp syntax instead.
 
-There's a bit more info on my old blog // comments are lies! See
-http://commentsarelies.blogspot.com/search/label/MPS
+There's a bit more info about the CLIPS expirement on my old blog // comments
+are lies! See http://commentsarelies.blogspot.com/search/label/MPS
+
+
