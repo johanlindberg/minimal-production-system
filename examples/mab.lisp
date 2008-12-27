@@ -302,7 +302,7 @@
   (thing (name ?obj) (location ?place) (on-top-of ?on))
   ?monkey <- (monkey (location ?place) (on-top-of ?on) (holding blank))
   =>
-  (printout t "Monkey climbs onto the ~A." ?obj)
+  (format t "Monkey climbs onto the ~A." ?obj)
   (modify ?monkey (on-top-of ?obj))
   (retract ?goal))
 
