@@ -5,12 +5,12 @@
   (:export :defrule
 	   :agenda :assert-fact	:breadth :clear
 	   :depth :facts :get-strategy :load
-	   :reset :run :set-strategy)
+	   :modify :reset :run :set-strategy)
   (:shadow :assert))
 (in-package :mps)
 
 (defmacro ppexp (&body body)
-       `(pprint (macroexpand-1 ',@body)))
+  `(pprint (macroexpand-1 ',@body)))
 
 ;;; Structures and parameters
 (defstruct activation
@@ -50,6 +50,166 @@
      collect (subseq string i j)
      while j))
 
+;;; Conflict resolution strategies
+;;; ------------------------------
+(defun order-by-salience (conflict-set)
+  (stable-sort conflict-set #'(lambda (activation1 activation2)
+				(> (activation-salience activation1)
+				   (activation-salience activation2)))))
+		
+(defun breadth (conflict-set)
+  "Implementation of the conflict resolution strategy 'breadth'"
+  (order-by-salience (stable-sort conflict-set
+				  #'(lambda (activation1 activation2)
+				      (< (activation-timestamp activation1)
+					 (activation-timestamp activation2))))))
+
+(defun depth (conflict-set)
+  "Implementation of the conflict resolution strategy 'depth'"
+  (order-by-salience (stable-sort conflict-set
+				  #'(lambda (activation1 activation2)
+				      (> (activation-timestamp activation1)
+					 (activation-timestamp activation2))))))
+
+
+;;; Inference engine implementation
+;;; -------------------------------
+(let* ((conflict-resolution-strategy #'depth)
+       (rete-network (make-hash-table))
+       (root-node (setf (gethash 'root rete-network) (make-hash-table)))
+       (fact-index 0)
+       (timestamp 0))
+
+  ;; Public API
+  (defun agenda ()
+    "Return all activations on the agenda."
+    (funcall conflict-resolution-strategy (flatten (get-conflict-set))))
+
+  (defun assert (&rest facts)
+    "Add <facts> to the working memory"
+    (incf timestamp)
+    (dolist (fact facts)
+      (incf fact-index)
+      (store '+ (list fact fact-index) 'memory/working-memory)
+      (mapcar #'(lambda (node)
+		  (funcall node '+ fact timestamp))
+	      (gethash (type-of fact) (gethash 'root rete-network))))
+    t)
+
+  (defun clear ()
+    "Clear the engine"
+    (clrhash rete-network)
+    (setf root-node (setf (gethash 'root rete-network) (make-hash-table)))
+    t)
+
+  (defun facts ()
+    "Return all facts in working memory"
+    (mapcar #'(lambda (fact)
+		(car fact))
+	    (gethash 'memory/working-memory rete-network)))
+
+  (defun get-strategy ()
+    "Return the current conflict resolution strategy."
+    conflict-resolution-strategy)
+
+  (defun all-memory-nodes ()
+    "Returns a list with the names of all memory nodes in the Rete Network"
+    (let ((mem-nodes '()))
+      (maphash #'(lambda (key val)
+		   (declare (ignore val))
+		   (let ((skey (string key)))
+		     (when (and (> (length skey) 7)
+				(string-equal "MEMORY/"
+					      (subseq skey 0 7)))
+		       (setf mem-nodes (append (list key) mem-nodes)))))
+	       rete-network)
+      mem-nodes))
+
+  (defun modify (fact &rest slots)
+    ; TBD
+    nil)
+
+  (defun reset ()
+    "Clear the working memory of facts"
+    (mapcar #'(lambda (memory) (setf (gethash memory rete-network) '()))
+	    (all-memory-nodes))
+    t)
+
+  (defun retract (&rest facts)
+    "Remove <facts> from the Rete network"
+
+    (incf timestamp)
+    (dolist (fact facts)
+      (store '- fact 'memory/working-memory)
+      (mapcar #'(lambda (node) (funcall node '- fact timestamp))
+	      (gethash (type-of fact) (gethash 'root rete-network))))
+    t)
+
+  (defun run (&optional (limit -1))
+    (do* ((curr-agenda (agenda) (agenda))
+	  (execution-count 0 (+ execution-count 1))
+	  (limit limit (- limit 1)))
+	 ((or (eq limit 0)
+	      (= (length curr-agenda) 0)) execution-count)
+      (let* ((activation (first curr-agenda)))
+	(funcall (activation-rhs-func activation) activation)
+	(store '- activation (activation-prod-mem activation)))))
+
+  (defun set-strategy (strategy)
+    "This function sets the current conflict resolution strategy. The default strategy is depth. 
+
+     Syntax: 
+       (set-strategy #'<strategy-function>) 
+ 
+     where <strategy-function> is either depth or breadth (which are provided in MPS), or a custom
+     function that performs conflict resolution. The agenda will be reordered to reflect the new
+     conflict resolution strategy."
+    (setf conflict-resolution-strategy strategy))
+
+
+  ;; Private API
+  (defun add-to-production-nodes (node)
+    "Add <node> to the list of production nodes"
+    (if (gethash 'production-nodes rete-network)
+	(setf (gethash 'production-nodes rete-network) (append (gethash 'production-nodes rete-network) (list node)))
+	(setf (gethash 'production-nodes rete-network) (list node))))
+
+  (defun add-to-root (type node)
+    "Add <node> as a successor to the type-node for <type>"
+    (if (gethash type root-node)
+	(setf (gethash type root-node) (append (gethash type root-node) (list node)))
+	(setf (gethash type root-node) (list node))))
+
+  (defun connect-nodes (from to)
+    "Connect <from> with <to> in the Rete Network"
+    (if (gethash from rete-network)
+	(setf (gethash from rete-network) (append (gethash from rete-network) (list to)))
+	(setf (gethash from rete-network) (list to))))
+
+  (defun contents-of (memory)
+    "Get all tokens in <memory>"
+    (gethash memory rete-network))
+
+  (defun get-conflict-set ()
+    (mapcar #'contents-of (gethash 'production-nodes rete-network)))
+
+  (defun propagate (key token timestamp from)
+    "Propagate <token> to all nodes that are connected to <from>"
+    (mapcar #'(lambda (node) (funcall node key token timestamp))
+	    (gethash from rete-network)))
+
+  (defun store (key token memory)
+    "Add (if <key> is '+) or remove (if <key> is '-) <token> from <memory>"
+    (if (eq key '+)
+	;; Add token
+	(if (gethash memory rete-network)
+	    (setf (gethash memory rete-network) (append (gethash memory rete-network) (list token)))
+	    (setf (gethash memory rete-network) (list token)))
+
+	;; Remove token
+	(if (gethash memory rete-network)
+	    (setf (gethash memory rete-network) (remove-if #'(lambda (item) (eq item token))
+							   (gethash memory rete-network)))))))
 
 ;;; defrule
 (defmacro defrule (name &body body)
