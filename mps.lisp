@@ -50,6 +50,15 @@
      collect (subseq string i j)
      while j))
 
+;; Stolen from On Lisp by Paul Graham.
+(defun flatten (x) 
+  (labels ((rec (x acc) 
+	     (cond ((null x) acc) 
+		   ((atom x) (cons x acc)) 
+		   (t (rec (car x) (rec (cdr x) acc)))))) 
+    (rec x nil)))
+
+
 ;;; Conflict resolution strategies
 ;;; ------------------------------
 (defun order-by-salience (conflict-set)
