@@ -86,6 +86,7 @@
 (let* ((conflict-resolution-strategy #'depth)
        (rete-network (make-hash-table))
        (root-node (setf (gethash 'root rete-network) (make-hash-table)))
+       (working-memory (make-hash-table :test #'equalp))
        (fact-index 0)
        (timestamp 0))
 
@@ -95,27 +96,37 @@
     (funcall conflict-resolution-strategy (flatten (get-conflict-set))))
 
   (defun assert (&rest facts)
-    "Add <facts> to the working memory"
+    "Add <facts> to the working memory and Rete Network"
     (incf timestamp)
     (dolist (fact facts)
       (incf fact-index)
-      (store '+ (list fact fact-index) 'memory/working-memory)
-      (mapcar #'(lambda (node)
-		  (funcall node '+ fact timestamp))
-	      (gethash (type-of fact) (gethash 'root rete-network))))
+      (unless (gethash fact working-memory)
+	(setf (gethash fact working-memory) fact-index)
+	(setf (gethash fact-index working-memory) fact)
+	(mapcar #'(lambda (node)
+		    (funcall node '+ fact timestamp))
+		(gethash (type-of fact) (gethash 'root rete-network)))))
     t)
 
   (defun clear ()
     "Clear the engine"
     (clrhash rete-network)
+    (clrhash working-memory)
     (setf root-node (setf (gethash 'root rete-network) (make-hash-table)))
+    (setf fact-index 0)
+    (setf timestamp 0)
+
     t)
 
   (defun facts ()
     "Return all facts in working memory"
-    (mapcar #'(lambda (fact)
-		(car fact))
-	    (gethash 'memory/working-memory rete-network)))
+    (let ((result '()))
+      (maphash #'(lambda (key value)
+		   (when (numberp key)
+		     (push value result)))
+	     working-memory)
+      result))
+    
 
   (defun get-strategy ()
     "Return the current conflict resolution strategy."
@@ -135,26 +146,36 @@
       mem-nodes))
 
   (defun modify (fact &rest slots)
+    "Modify <fact>"
+    (when (numberp fact)
+      (setf fact (get-fact fact)))
     ; TBD
     nil)
 
   (defun reset ()
-    "Clear the working memory of facts"
-    (mapcar #'(lambda (memory) (setf (gethash memory rete-network) '()))
+    "Clear the Working Memory and Rete network memory nodes of facts"
+    (clrhash working-memory)
+    (mapcar #'(lambda (memory)
+		(setf (gethash memory rete-network) '()))
 	    (all-memory-nodes))
     t)
 
   (defun retract (&rest facts)
-    "Remove <facts> from the Rete network"
-
+    "Remove <facts> from the Working Memory and Rete network"
     (incf timestamp)
     (dolist (fact facts)
-      (store '- fact 'memory/working-memory)
-      (mapcar #'(lambda (node) (funcall node '- fact timestamp))
-	      (gethash (type-of fact) (gethash 'root rete-network))))
+      (when (gethash fact working-memory)
+	(setf fact-index (get-fact-index-of fact))
+	(remhash fact-index working-memory)
+	(remhash fact working-memory)
+	  
+	(mapcar #'(lambda (node)
+		    (funcall node '- fact timestamp))
+		(gethash (type-of fact) (gethash 'root rete-network)))))
     t)
 
   (defun run (&optional (limit -1))
+    "Run"
     (do* ((curr-agenda (agenda) (agenda))
 	  (execution-count 0 (+ execution-count 1))
 	  (limit limit (- limit 1)))
@@ -204,20 +225,28 @@
 
   (defun propagate (key token timestamp from)
     "Propagate <token> to all nodes that are connected to <from>"
-    (mapcar #'(lambda (node) (funcall node key token timestamp))
+    (mapcar #'(lambda (node)
+		(funcall node key token timestamp))
 	    (gethash from rete-network)))
 
+  (defun get-fact-with-index (index)
+    (gethash index working-memory))
+
+  (defun get-fact-index-of (fact)
+    (gethash fact working-memory))
+
   (defun store (key token memory)
-    "Add (if <key> is '+) or remove (if <key> is '-) <token> from <memory>"
+    "Add <token> to (if <key> is '+) or remove from (if <key> is '-) <memory>"
     (if (eq key '+)
 	;; Add token
 	(if (gethash memory rete-network)
-	    (setf (gethash memory rete-network) (append (gethash memory rete-network) (list token)))
+	    (if (not (member token (gethash memory rete-network) :test #'equalp))
+		(setf (gethash memory rete-network) (append (gethash memory rete-network) (list token))))
 	    (setf (gethash memory rete-network) (list token)))
 
 	;; Remove token
 	(if (gethash memory rete-network)
-	    (setf (gethash memory rete-network) (remove-if #'(lambda (item) (eq item token))
+	    (setf (gethash memory rete-network) (remove-if #'(lambda (item) (equalp item token))
 							   (gethash memory rete-network)))))))
 
 ;;; defrule
