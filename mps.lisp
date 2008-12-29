@@ -132,19 +132,6 @@
     "Return the current conflict resolution strategy."
     conflict-resolution-strategy)
 
-  (defun all-memory-nodes ()
-    "Returns a list with the names of all memory nodes in the Rete Network"
-    (let ((mem-nodes '()))
-      (maphash #'(lambda (key val)
-		   (declare (ignore val))
-		   (let ((skey (string key)))
-		     (when (and (> (length skey) 7)
-				(string-equal "MEMORY/"
-					      (subseq skey 0 7)))
-		       (setf mem-nodes (append (list key) mem-nodes)))))
-	       rete-network)
-      mem-nodes))
-
   (defun modify (fact &rest slots)
     "Modify <fact>"
     (when (numberp fact)
@@ -210,6 +197,19 @@
 	(setf (gethash type root-node) (append (gethash type root-node) (list node)))
 	(setf (gethash type root-node) (list node))))
 
+  (defun all-memory-nodes ()
+    "Returns a list with the names of all memory nodes in the Rete Network"
+    (let ((mem-nodes '()))
+      (maphash #'(lambda (key val)
+		   (declare (ignore val))
+		   (let ((skey (string key)))
+		     (when (and (> (length skey) 7)
+				(string-equal "MEMORY/"
+					      (subseq skey 0 7)))
+		       (setf mem-nodes (append (list key) mem-nodes)))))
+	       rete-network)
+      mem-nodes))
+
   (defun connect-nodes (from to)
     "Connect <from> with <to> in the Rete Network"
     (if (gethash from rete-network)
@@ -241,12 +241,13 @@
 	;; Add token
 	(if (gethash memory rete-network)
 	    (if (not (member token (gethash memory rete-network) :test #'equalp))
-		(setf (gethash memory rete-network) (append (gethash memory rete-network) (list token))))
+		(push (gethash memory rete-network) token))
 	    (setf (gethash memory rete-network) (list token)))
 
 	;; Remove token
 	(if (gethash memory rete-network)
-	    (setf (gethash memory rete-network) (remove-if #'(lambda (item) (equalp item token))
+	    (setf (gethash memory rete-network) (remove-if #'(lambda (item)
+							       (equalp item token))
 							   (gethash memory rete-network)))))))
 
 ;;; defrule
