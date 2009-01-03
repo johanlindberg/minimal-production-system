@@ -2,7 +2,7 @@
 
 (defpackage :mps
   (:use :common-lisp)
-  (:export :defrule
+  (:export :defrule :deftemplate
 	   :agenda :assert-fact	:breadth :clear
 	   :depth :facts :get-strategy :load
 	   :modify :reset :run :set-strategy)
@@ -35,11 +35,9 @@
     (intern sym)))
 
 (defun variable-p (sym)
-  "Return T if <sym> is a variable (starts with $? or ?) otherwise NIL."
+  "Return T if <sym> is a variable (starts with ?) otherwise NIL."
   (and (symbolp sym)
-       (or (and (eq (char (string sym) 0) #\$)
-		(eq (char (string sym) 1) #\?))
-	   (eq (char (string sym) 0) #\?))))
+       (eq (char (string sym) 0) #\?)))
 
 ;; Stolen from the Common Lisp Cookbook. See
 ;; http://cl-cookbook.sourceforge.net/strings.html
@@ -96,7 +94,7 @@
     (funcall conflict-resolution-strategy (flatten (get-conflict-set))))
 
   (defun assert (&rest facts)
-    "Add <facts> to the working memory and Rete Network"
+    "Add <facts> to the working memory and Rete Network."
     (incf timestamp)
     (dolist (fact facts)
       (incf fact-index)
@@ -135,12 +133,12 @@
   (defun modify (fact &rest slots)
     "Modify <fact>"
     (when (numberp fact)
-      (setf fact (get-fact fact)))
+      (setf fact (get-fact-with-index fact)))
     ; TBD
     nil)
 
   (defun reset ()
-    "Clear the Working Memory and Rete network memory nodes of facts"
+    "Clear the Working Memory and Rete network memory nodes of facts."
     (clrhash working-memory)
     (mapcar #'(lambda (memory)
 		(setf (gethash memory rete-network) '()))
@@ -148,14 +146,13 @@
     t)
 
   (defun retract (&rest facts)
-    "Remove <facts> from the Working Memory and Rete network"
+    "Remove <facts> from the Working Memory and Rete network."
     (incf timestamp)
     (dolist (fact facts)
       (when (gethash fact working-memory)
 	(setf fact-index (get-fact-index-of fact))
 	(remhash fact-index working-memory)
 	(remhash fact working-memory)
-	  
 	(mapcar #'(lambda (node)
 		    (funcall node '- fact timestamp))
 		(gethash (type-of fact) (gethash 'root rete-network)))))
@@ -249,6 +246,72 @@
 	    (setf (gethash memory rete-network) (remove-if #'(lambda (item)
 							       (equalp item token))
 							   (gethash memory rete-network)))))))
+;;; deftemplate
+;;;
+;;; (deftemplate <deftemplate-name> [<comment>] 
+;;;   <single-slot-definition>*) 
+;;; 
+;;; <single-slot-definition>  
+;;;                ::= (slot <slot-name>  
+;;;                          <default-attribute>) 
+;;; 
+;;; <default-attribute>   
+;;;                ::= (default ?NONE | <expression>) | 
+;;;                    (default-dynamic <expression>)
+
+(defmacro slot (name &optional (default-form nil))
+  (cond ((null default-form)
+	 name)
+
+	;; required value
+	((and (eq (car default-form) 'default)
+	      (eq (cadr default-form) '?NONE))
+	 `(,name (error "The slot: ~A requires a value!" ',name)))
+
+	;; default value
+	((eq (car default-form) 'default)
+	 `(,name ',(eval (cadr default-form))))
+
+	;; default-dynamic value
+	((eq (car default-form) 'default-dynamic)
+	 `(,name ,(cadr default-form)))))
+
+(defun call-defstruct-constructor (constructor &rest slots)
+  (apply constructor (mapcan #'(lambda (slot)
+				 `(,(as-keyword (car slot)) ,(cadr slot)))
+			     (car slots))))
+  
+(defmacro deftemplate (name &body slots)
+  "
+  The deftemplate construct is used to create a template which can then
+  be used by non-ordered facts to access fields of the fact by name.
+
+  Syntax:
+  <deftemplate-construct>  
+    ::= (deftemplate <deftemplate-name> [<single-slot-definition>]*)
+ 
+  <single-slot-definition>
+    ::= (slot <slot-name> [<default-attribute>])
+ 
+  <default-attribute> 
+    ::= (default ?NONE | <expression>) |
+        (default-dynamic <expression>)
+
+  Examples:
+  (deftemplate object
+    (slot id (default-dynamic (gensym)))
+    (slot name (default ?NONE))           ; Makes name a required field!
+    (slot age))
+  "
+  (let ((defstruct-name (make-sym "deftemplate/" name))
+	(defstruct-constructor (make-sym "make-deftemplate/" name)))
+    `(progn
+       (defstruct ,defstruct-name
+	 ,@(mapcar #'macroexpand-1 slots))
+     
+       (defmacro ,name (&rest slots)
+	 (call-defstruct-constructor ',defstruct-constructor slots)))))
+
 
 ;;; defrule
 (defmacro defrule (name &body body)
@@ -306,17 +369,18 @@
   (let* ((slot (cadr conditional-element))
 	 (slot-name (car slot))
 	 (slot-value (cadr slot)))
-    ;; Generate a new node for each &-constraint, ~ and / are handled within the
-    ;; nodes. (fact (foo ?foo&~1&~2)) expands into two alpha nodes: fact-foo-is-
-    ;; not-1 and fact-foo-is-not-2.
-    (dolist (constraint (split (symbol-name slot-value) #\&))
-      (let ((part (intern (string-upcase constraint))))
-	(if (variable-p part)
-	    (push (list part defstruct-name slot-name variable) variable-bindings)
-	    (eval (make-node defstruct-name slot-name part)))))))
+    ;; Generate a new alpha/beta node pair for each pattern in the LHS.
+    (if (symbolp slot-value)
+	(dolist (constraint (split (symbol-name slot-value) #\&))
+	  (let ((part (intern (string-upcase constraint))))
+	    (if (variable-p part)
+		(push (list part defstruct-name slot-name variable) variable-bindings)
+		(eval (make-node defstruct-name slot-name part)))))
+	(eval (make-node defstruct-name slot-name slot-value)))))
+  
 
 (defun make-node (defstruct-name slot-name pattern-constraint)
-  (let* ((or-constraint (position #\| (symbol-name pattern-constraint)))
+  (let* ((or-constraint (position #\/ (symbol-name pattern-constraint)))
 	 (not-constraint (position #\~ (symbol-name pattern-constraint)))
 	 (not-constraint-value (subseq (symbol-name pattern-constraint) (+ not-constraint 1))))
     (cond
