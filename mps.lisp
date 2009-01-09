@@ -18,8 +18,8 @@
   salience token timestamp
   rhs-func prod-mem)
 
-(defparameter variable-bindings '())
-(defparameter fact-bindings '())
+(defparameter variable-bindings (make-hash-table))
+(defparameter fact-bindings (make-hash-table))
 
 ;;; Helper methods
 
@@ -319,14 +319,16 @@
   (let ((rhs (cdr (member '=> body)))
 	(lhs (ldiff body (member '=> body))))
     `(progn
-       (compile-lhs ,name ,@lhs)
-       (compile-rhs ,name ,@rhs))))
+;       (let ((fact-bindings (make-hash-table))
+;	     (variable-bindings (make-hash-table)))
+	 (compile-lhs ,name ,@lhs)
+	 (compile-rhs ,name ,@rhs))))
 
 ;; defrule - LHS
 (defmacro compile-lhs (rule-name &body lhs)
   `(progn
-     (setf variable-bindings '())
-     (setf fact-bindings '())
+     (setf variable-bindings (make-hash-table))
+     (setf fact-bindings (make-hash-table))
      (parse ,rule-name ,@lhs)))
 
 (defmacro parse (rule-name &rest conditional-elements)
@@ -345,108 +347,129 @@
 (defmacro parse-ce (rule-name conditional-element)
   (let ((ce-type (car conditional-element)))
     (case ce-type
-      (not `(parse-not-ce ,rule-name ,conditional-element)) ; TBD
-      (test `(parse-test-ce ,rule-name ,conditional-element)) ; TBD
-      (otherwise `(parse-pattern-ce ,rule-name ,(gensym) ,conditional-element)))))
+      (not `(parse-not-ce ,rule-name ,conditional-element))
+      (test `(parse-test-ce ,rule-name ,conditional-element))
+      (otherwise `(parse-pattern-ce ,rule-name nil ,conditional-element)))))
 
-(defmacro parse-not-ce (rule-name variable pattern-ce)
-  (declare (ignore rule-name))
-  (print (list 'not variable pattern-ce)))
+(defmacro parse-not-ce (rule-name variable &rest conditional-elements)
+  ; TBD
+  (print (list 'not rule-name variable conditional-elements)))
 
-(defmacro parse-test-ce (rule-name variable pattern-ce)
-  (declare (ignore rule-name))
-  (print (list 'test variable pattern-ce)))
+(defmacro parse-test-ce (rule-name variable conditional-element)
+  ; TBD
+  (print (list 'test rule-name variable conditional-element)))
 
-(defmacro parse-pattern-ce (rule-name variable pattern-ce)
-  (declare (ignore rule-name))
-  (let ((defstruct-name (car pattern-ce)))
+(defmacro parse-pattern-ce (rule-name variable conditional-element)
+  (let ((deftemplate-name (car conditional-element))
+	(position (hash-table-count fact-bindings)))
     `(progn
-       ;; Update bindings
-       (push (list ',variable (length fact-bindings)) fact-bindings)
-       (generate-network-nodes ',defstruct-name ',pattern-ce ',variable))))
+       (unless ,(null variable)
+	 (setf (gethash ',variable fact-bindings) ,position))
+       (make-alpha-nodes ',rule-name ',deftemplate-name ',conditional-element ',variable ,position)
+       (make-beta-node ',rule-name ',deftemplate-name ,position))))
 
-(defun generate-network-nodes (defstruct-name conditional-element variable)
-  (let* ((slot (cadr conditional-element))
-	 (slot-name (car slot))
-	 (slot-value (cadr slot)))
-    ;; Generate a new alpha/beta node pair for each pattern in the LHS.
-    (if (symbolp slot-value)
-	(dolist (constraint (split (symbol-name slot-value) #\&))
-	  (let ((part (intern (string-upcase constraint))))
-	    (if (variable-p part)
-		(push (list part defstruct-name slot-name variable) variable-bindings)
-		(eval (make-node defstruct-name slot-name part)))))
-	(eval (make-node defstruct-name slot-name slot-value)))))
-  
+(defun make-alpha-nodes (rule-name deftemplate-name conditional-element variable position)
+  (dolist (slot (cdr conditional-element))
+    (let* ((slot-name (car slot))
+	   (slot-value (cadr slot))
+	   (alpha-node (if (symbolp slot-value)
+			   (make-node-with-symbol-constraint rule-name deftemplate-name slot-name slot-value variable position)
+			   (make-node-with-literal-constraint rule-name deftemplate-name slot-name slot-value position))))
+      (pprint alpha-node))))
+      ; connect alpha nodes here!
+      ;(eval alpha-node))))
 
-(defun make-node (defstruct-name slot-name pattern-constraint)
-  (let* ((or-constraint (position #\/ (symbol-name pattern-constraint)))
-	 (not-constraint (position #\~ (symbol-name pattern-constraint)))
-	 (not-constraint-value (subseq (symbol-name pattern-constraint) (+ not-constraint 1))))
-    (cond
-      (or-constraint
-       (let ((function-name (make-sym "alpha/" defstruct-name "-" slot-name))
-	     (constraint '()))
-	 (dolist (constraint (split (symbol-name pattern-constraint) #\/))
-	   (let* ((partial-constraint (intern (string-upcase constraint)))
-		  (partial-not-constraint (position #\~ (symbol-name partial-constraint)))
-		  (partial-not-constraint-value (subseq (symbol-name partial-constraint) (+ partial-not-constraint 1))))
-	     (print (list partial-constraint partial-not-constraint partial-not-constraint-value))
-	     (if partial-not-constraint
-		 (progn
-		   (push `(not (eq (,(make-sym defstruct-name "-" slot-name) fact)
-				   ,(read-from-string partial-not-constraint-value))) constraint)
-		   (setf function-name (concatenate 'string function-name "-is-not-" partial-not-constraint-value "-or")))
-		 (progn
-		   (push `(eq (,(make-sym defstruct-name "-" slot-name) fact)
-			      ,(read-from-string partial-not-constraint-value)) constraint)
-		   (setf function-name (concatenate 'string function-name "-is-" partial-not-constraint-value "-or"))))))
-	 ; Remove the last "-or" from function-name
-	 (print function-name)
-	 (setf function-name (subseq function-name 0 (- (length function-name) 3)))
-	 (print function-name)
-	 `(defun ,function-name (key fact timestamp)
-	    (when (or ,constraint)
-	      (unless (consp fact)
-		(setf fact (list fact)))
-	      (store key fact ',(make-sym "memory/" function-name))
-	      (propagate key fact timestamp ',function-name)))))
+(defun make-beta-node (rule-name deftemplate-name position)
+  (print 'beta))
 
-      (not-constraint
-       `(defun ,(make-sym "alpha/" defstruct-name "-" slot-name "-is-not-" not-constraint-value) (key fact timestamp)
-	  (when (not (eq (,(make-sym defstruct-name "-" slot-name) fact)
-			 ,(read-from-string not-constraint-value)))
-	    (unless (consp fact)
-	      (setf fact (list fact)))
-	    (store key fact ',(make-sym "memory/alpha/" defstruct-name "-" slot-name "-is-not-" not-constraint-value))
-	    (propagate key fact timestamp ',(make-sym "alpha/" defstruct-name "-" slot-name "-is-not-" not-constraint-value)))))
+(defun make-node-with-literal-constraint (rule-name deftemplate-name slot-name slot-value position)
+  (let ((defstruct-name (make-sym "deftemplate/" deftemplate-name))
+	(node-name (make-sym "alpha/" rule-name "-" (format nil "~A" position) "/" deftemplate-name "-" slot-name)))
+    `(defun ,node-name (key fact timestamp)
+       (when (eq (,(make-sym defstruct-name "-" slot-name) fact)
+		 ,slot-value)
+	 (unless (consp fact)
+	   (setf fact (list fact)))
+	 (store key fact ',(make-sym "memory/" node-name))
+	 (propagate key fact timestamp ',node-name)))))
 
-      (t
-       `(defun ,(make-sym "alpha/" defstruct-name "-" slot-name "-is-" not-constraint-value) (key fact timestamp)
-	  (when (eq (,(make-sym defstruct-name "-" slot-name) fact)
-		    ,(read-from-string not-constraint-value))
-	    (unless (consp fact)
-	      (setf fact (list fact)))
-	    (store key fact ',(make-sym "memory/alpha/" defstruct-name "-" slot-name "-is-" not-constraint-value))
-	    (propagate key fact timestamp ',(make-sym "alpha/" defstruct-name "-" slot-name "-is-" not-constraint-value))))))))
+(defun make-node-with-symbol-constraint (rule-name deftemplate-name slot-name slot-value variable position)
+  (let* ((defstruct-name (make-sym "deftemplate/" deftemplate-name))
+	 (node-name (make-sym "alpha/" rule-name "-" (format nil "~A" position) "/" deftemplate-name "-" slot-name))
+	 (slot-accessor (make-sym defstruct-name "-" slot-name))
+	 (constraint (parse-constraint slot-value slot-accessor variable position)))
+    `(defun ,node-name (key fact timestamp)
+       (when ,constraint
+	 (unless (consp fact)
+	   (setf fact (list fact)))
+	 (store key fact ',(make-sym "memory/" node-name))
+	 (propagate key fact timestamp ',node-name)))))
 
+(defun parse-constraint (slot-value slot-accessor variable position)
+  (let ((result '())
+	(part '())
+	(fact-variable variable))
+    (dolist (chunk (split slot-value #\&))
+      (let ((piece-result '()))      
+	(dolist (piece (split chunk #\/))
+	  (if (eq (char piece 0) #\~)
+	      (progn
+		(setf part (make-sym (subseq piece 1)))
+		(cond ((variable-p part)
+		       (push `(not (eq ,slot-accessor ,(expand-variable part))) piece-result))
+		      ((symbolp part)
+		       (push `(not (eq ,slot-accessor ',part)) piece-result))
+		      (t
+		       (push `(not (eq ,slot-accessor ,part)) piece-result))))
+	      (progn
+		(setf part (make-sym piece))
+		(cond ((variable-p part)
+		       (progn
+			 (when (and (null fact-variable)
+				    (null (gethash part variable-bindings)))
+			   (setf fact-variable (gensym))
+			   (setf (gethash fact-variable fact-bindings) position))
+			 (if (gethash part variable-bindings)
+			     (push `(eq ,slot-accessor ,(expand-variable part)) piece-result)
+			     (progn
+			       (setf (gethash part variable-bindings) (list slot-accessor fact-variable))
+			       (push 't piece-result)))))
+		      ((symbolp part)
+		       (push `(eq ,slot-accessor ',part) piece-result))
+		      (t
+		       (push `(eq ,slot-accessor ,part) piece-result))))))
+	(if (> (length piece-result) 1)
+	    (push `(or ,@piece-result) result)
+	    (push piece-result result))))
+    (if (> (length result) 1)
+	`(and ,@(mapcar #'car result))
+	`(and ,@result))))
 
+(defun expand-variable (variable-name)
+  (car (gethash variable-name variable-bindings)))
 
 ;; defrule - RHS
-(defun make-variable-binding (binding)
-  `(,(car binding) (,(make-sym (cadr binding) "-" (caddr binding)) ,(cadddr binding))))
+(defun make-variable-binding (key value)
+  ;; variable-name : (accessor variable)
+  `(,key (,(car value) ,(cadr value))))
 
-(defun make-fact-binding (binding)
-  (let ((variable (car binding))
-	(position (cadr binding)))
-    `(,variable (nth ,position token))))
+(defun make-fact-binding (key value)
+  ;; variable-name : position
+  `(,key (nth ,value token)))
 
 (defmacro compile-rhs (rule-name &body rhs)
-  (when (null rhs)
-    (setf rhs '(t)))
-  `(defun ,(make-sym "RHS/" rule-name) (activation)
-     (let* ((token (activation-token activation))
-	    ,@(mapcar #'make-fact-binding (reverse fact-bindings))
-	    ,@(mapcar #'make-variable-binding (reverse variable-bindings)))
-       ,@rhs)))
-
+  (let ((list-of-fact-bindings '())
+	(list-of-variable-bindings '()))
+    (maphash #'(lambda (key value)
+		 (push (make-fact-binding key value) list-of-fact-bindings)) fact-bindings)
+    (maphash #'(lambda (key value)
+		 (push (make-variable-binding key value) list-of-variable-bindings)) variable-bindings)
+    (when (null rhs)
+      (setf rhs '(t)))
+    (let ((rhs-function
+	   `(defun ,(make-sym "RHS/" rule-name) (activation)
+	      (let* ((token (activation-token activation))
+		     ,@list-of-fact-bindings
+		     ,@list-of-variable-bindings)
+		,@rhs))))
+      (pprint rhs-function))))
