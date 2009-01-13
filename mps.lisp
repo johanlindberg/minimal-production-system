@@ -20,6 +20,7 @@
 
 (defparameter variable-bindings (make-hash-table))
 (defparameter fact-bindings (make-hash-table))
+(defparameter nodes (make-hash-table))
 
 ;;; Helper methods
 
@@ -365,88 +366,93 @@
     `(progn
        (unless ,(null variable)
 	 (setf (gethash ',variable fact-bindings) ,position))
-       (make-alpha-nodes ',rule-name ',deftemplate-name ',conditional-element ',variable ,position)
+       (setf (gethash ,position nodes) (make-alpha-nodes ',rule-name ',deftemplate-name ',conditional-element ',variable ,position))
        (make-beta-node ',rule-name ',deftemplate-name ,position))))
 
 (defun make-alpha-nodes (rule-name deftemplate-name conditional-element variable position)
-  (dolist (slot (cdr conditional-element))
-    (let* ((slot-name (car slot))
-	   (slot-value (cadr slot))
-	   (alpha-node (if (symbolp slot-value)
-			   (make-node-with-symbol-constraint rule-name deftemplate-name slot-name slot-value variable position)
-			   (make-node-with-literal-constraint rule-name deftemplate-name slot-name slot-value position))))
-      (pprint alpha-node))))
-      ; connect alpha nodes here!
-      ;(eval alpha-node))))
+  (let ((prev-node '()))
+    (dolist (slot (cdr conditional-element))
+      (let* ((slot-name (car slot))
+	     (slot-binding (if (variable-p (cadr slot))
+			       (cadr slot)
+			       nil))
+	     (slot-constraint (if (null slot-binding)
+				  (cadr slot)
+				  (caddr slot))))
+	(multiple-value-bind (alpha-node alpha-node-name)
+	    (if (or (consp slot-constraint)
+		    (symbolp slot-constraint))
+		(make-node-with-symbol-constraint rule-name deftemplate-name slot-name slot-binding slot-constraint variable position)
+		(make-node-with-literal-constraint rule-name deftemplate-name slot-name slot-constraint position))
+	  (pprint alpha-node)
+	  (eval alpha-node)
+	  (if prev-node
+	      (connect-nodes prev-node alpha-node-name)
+	      (add-to-root (car conditional-element) alpha-node-name))
+	  (setf prev-node alpha-node-name))))
+    prev-node))
 
 (defun make-beta-node (rule-name deftemplate-name position)
   (print 'beta))
 
-(defun make-node-with-literal-constraint (rule-name deftemplate-name slot-name slot-value position)
+(defun make-node-with-literal-constraint (rule-name deftemplate-name slot-name slot-constraint position)
   (let ((defstruct-name (make-sym "deftemplate/" deftemplate-name))
 	(node-name (make-sym "alpha/" rule-name "-" (format nil "~A" position) "/" deftemplate-name "-" slot-name)))
-    `(defun ,node-name (key fact timestamp)
-       (when (eq (,(make-sym defstruct-name "-" slot-name) fact)
-		 ,slot-value)
-	 (unless (consp fact)
-	   (setf fact (list fact)))
-	 (store key fact ',(make-sym "memory/" node-name))
-	 (propagate key fact timestamp ',node-name)))))
+    (values
+     `(defun ,node-name (key fact timestamp)
+	(when (eq (,(make-sym defstruct-name "-" slot-name) fact)
+		  ,slot-constraint)
+	  (unless (consp fact)
+	    (setf fact (list fact)))
+	  (store key fact ',(make-sym "memory/" node-name))
+	  (propagate key fact timestamp ',node-name)))
+     node-name)))
 
-(defun make-node-with-symbol-constraint (rule-name deftemplate-name slot-name slot-value variable position)
+(defun make-node-with-symbol-constraint (rule-name deftemplate-name slot-name slot-binding slot-constraint variable position)
   (let* ((defstruct-name (make-sym "deftemplate/" deftemplate-name))
 	 (node-name (make-sym "alpha/" rule-name "-" (format nil "~A" position) "/" deftemplate-name "-" slot-name))
 	 (slot-accessor (make-sym defstruct-name "-" slot-name))
-	 (constraint (parse-constraint slot-value slot-accessor variable position)))
-    `(defun ,node-name (key fact timestamp)
-       (when ,constraint
-	 (unless (consp fact)
-	   (setf fact (list fact)))
-	 (store key fact ',(make-sym "memory/" node-name))
-	 (propagate key fact timestamp ',node-name)))))
+	 (binding-constraint (parse-binding-constraint slot-binding slot-constraint slot-accessor variable position))
+	 (constraint (if slot-constraint
+			 (expand-variables slot-constraint)
+			 binding-constraint)))
+    (values
+     `(defun ,node-name (key fact timestamp)
+	(when ,constraint
+	  (unless (consp fact)
+	    (setf fact (list fact)))
+	  (store key fact ',(make-sym "memory/" node-name))
+	  (propagate key fact timestamp ',node-name)))
+     node-name)))
 
-(defun parse-constraint (slot-value slot-accessor variable position)
-  (let ((result '())
-	(part '())
-	(fact-variable variable))
-    (dolist (chunk (split slot-value #\&))
-      (let ((piece-result '()))      
-	(dolist (piece (split chunk #\/))
-	  (if (eq (char piece 0) #\~)
-	      (progn
-		(setf part (make-sym (subseq piece 1)))
-		(cond ((variable-p part)
-		       (push `(not (eq ,slot-accessor ,(expand-variable part))) piece-result))
-		      ((symbolp part)
-		       (push `(not (eq ,slot-accessor ',part)) piece-result))
-		      (t
-		       (push `(not (eq ,slot-accessor ,part)) piece-result))))
-	      (progn
-		(setf part (make-sym piece))
-		(cond ((variable-p part)
-		       (progn
-			 (when (and (null fact-variable)
-				    (null (gethash part variable-bindings)))
-			   (setf fact-variable (gensym))
-			   (setf (gethash fact-variable fact-bindings) position))
-			 (if (gethash part variable-bindings)
-			     (push `(eq ,slot-accessor ,(expand-variable part)) piece-result)
-			     (progn
-			       (setf (gethash part variable-bindings) (list slot-accessor fact-variable))
-			       (push 't piece-result)))))
-		      ((symbolp part)
-		       (push `(eq ,slot-accessor ',part) piece-result))
-		      (t
-		       (push `(eq ,slot-accessor ,part) piece-result))))))
-	(if (> (length piece-result) 1)
-	    (push `(or ,@piece-result) result)
-	    (push piece-result result))))
-    (if (> (length result) 1)
-	`(and ,@(mapcar #'car result))
-	`(and ,@result))))
+(defun parse-binding-constraint (slot-binding slot-constraint slot-accessor variable position)
+  (let ((fact-variable variable))
+    (when (not (null slot-binding))
+      ;; Make sure that this slot-value is reachable in the RHS
+      (when (and (null fact-variable)
+		 (null (gethash slot-binding variable-bindings)))
+	(setf fact-variable (gensym))
+	(setf (gethash fact-variable fact-bindings) position))
+      ;; Bind this variable to this CE
+      (if (not (gethash slot-binding variable-bindings))
+	  (progn
+	    (setf (gethash slot-binding variable-bindings) (list slot-accessor fact-variable (list position)))
+	    (when (null slot-constraint)
+	      t))
+	  (unless (member position (caddr (gethash slot-binding variable-bindings)))
+	    (push (caddr (gethash slot-binding variable-bindings)) position)
+	    (when (null slot-constraint)
+	      t))))))
 
 (defun expand-variable (variable-name)
   (car (gethash variable-name variable-bindings)))
+
+(defun expand-variables (form)
+  (maphash #'(lambda (key value)
+	       (nsubst (car value) key form))
+	   variable-bindings)
+  form)
+	   
 
 ;; defrule - RHS
 (defun make-variable-binding (key value)
