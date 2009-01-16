@@ -352,43 +352,39 @@
 	 (compile-lhs ,name ,@lhs)
 	 (compile-rhs ,name ,@rhs)))))
 
-(defmacro compile-lhs (rule-name &body lhs)
-  `(progn
-     (setf variable-bindings (make-hash-table))
-     (setf fact-bindings (make-hash-table))
-     (parse ,rule-name ,@lhs)))
+(defmacro compile-lhs (rule-name &rest lhs)
+  `(parse ,rule-name 0 ,@lhs))
 
-(defmacro parse (rule-name &rest conditional-elements)
+(defmacro parse (rule-name position &rest conditional-elements)
   (unless (eq (car conditional-elements) 'nil)
     (cond ((consp (car conditional-elements))
 	   `(progn
-	      (parse-ce ,rule-name ,(car conditional-elements))
-	      (parse ,rule-name ,@(cdr conditional-elements))))
+	      (parse-ce ,rule-name ,position ,(car conditional-elements))
+	      (parse ,rule-name ,(+ position 1) ,@(cdr conditional-elements))))
 	  ((variable-p (car conditional-elements))
 	   (progn
 	     (cl:assert (eq (cadr conditional-elements) '<-))
 	     `(progn
-		(parse-pattern-ce ,rule-name ,(car conditional-elements) ,(caddr conditional-elements))
-		(parse ,rule-name ,@(cdddr conditional-elements))))))))
+		(parse-pattern-ce ,rule-name ,position ,(car conditional-elements) ,(caddr conditional-elements))
+		(parse ,rule-name ,(+ position 1) ,@(cdddr conditional-elements))))))))
 
-(defmacro parse-ce (rule-name conditional-element)
+(defmacro parse-ce (rule-name position conditional-element)
   (let ((ce-type (car conditional-element)))
     (case ce-type
-      (not `(parse-not-ce ,rule-name ,conditional-element))
-      (test `(parse-test-ce ,rule-name ,conditional-element))
-      (otherwise `(parse-pattern-ce ,rule-name nil ,conditional-element)))))
+      (not `(parse-not-ce ,rule-name ,position ,conditional-element))
+      (test `(parse-test-ce ,rule-name ,position ,conditional-element))
+      (otherwise `(parse-pattern-ce ,rule-name ,position nil ,conditional-element)))))
 
-(defmacro parse-not-ce (rule-name &rest conditional-elements)
+(defmacro parse-not-ce (rule-name position &rest conditional-elements)
   ; TBD
-  (print (list 'not rule-name conditional-elements)))
+  `(print (list 'not ,rule-name ,position ,conditional-elements)))
 
-(defmacro parse-test-ce (rule-name variable conditional-element)
+(defmacro parse-test-ce (rule-name position variable conditional-element)
   ; TBD
-  (print (list 'test rule-name variable conditional-element)))
+  `(print (list 'test ,rule-name ,position ,variable ,conditional-element)))
 
-(defmacro parse-pattern-ce (rule-name variable conditional-element)
-  (let ((deftemplate-name (car conditional-element))
-	(position (hash-table-count fact-bindings)))
+(defmacro parse-pattern-ce (rule-name position variable conditional-element)
+  (let ((deftemplate-name (car conditional-element)))
     `(progn
        (unless ,(null variable)
 	 (setf (gethash ',variable fact-bindings) ,position))
@@ -413,13 +409,21 @@
 	  (pprint alpha-node)
 	  (eval alpha-node)
 	  (if prev-node
-	      (connect-nodes prev-node alpha-node-name)
-	      (add-to-root (car conditional-element) alpha-node-name))
+	      (progn
+		(print `(connect-nodes ,prev-node ,alpha-node-name))
+		(connect-nodes prev-node alpha-node-name))
+	      (progn
+		(print `(add-to-root ,(car conditional-element) ,alpha-node-name))
+		(add-to-root (car conditional-element) alpha-node-name)))
 	  (setf prev-node alpha-node-name))))
     prev-node))
 
 (defun make-beta-node (rule-name deftemplate-name position)
-  (print (list 'beta position)))
+  (let ((left-memory-name (if (eq position 0)
+			      nil
+			      (gethash (- position 1) nodes)))
+	(right-memory-name (gethash position nodes)))
+    (print `(beta ,position ,rule-name ,deftemplate-name ,left-memory-name ,right-memory-name))))
 
 (defun make-node-with-literal-constraint (rule-name deftemplate-name slot-name slot-constraint position)
   (let ((defstruct-name (make-sym "deftemplate/" deftemplate-name))
