@@ -389,7 +389,7 @@
        (unless ,(null variable)
 	 (setf (gethash ',variable fact-bindings) ,position))
        (setf (gethash ,position nodes) (make-alpha-nodes ',rule-name ',deftemplate-name ',conditional-element ',variable ,position))
-       (make-beta-node ',rule-name ',deftemplate-name ,position))))
+       (make-beta-node ',rule-name ,position))))
 
 (defun make-alpha-nodes (rule-name deftemplate-name conditional-element variable position)
   (let ((prev-node '()))
@@ -418,12 +418,26 @@
 	  (setf prev-node alpha-node-name))))
     prev-node))
 
-(defun make-beta-node (rule-name deftemplate-name position)
-  (let ((left-memory-name (if (eq position 0)
-			      nil
-			      (gethash (- position 1) nodes)))
-	(right-memory-name (gethash position nodes)))
-    (print `(beta ,position ,rule-name ,deftemplate-name ,left-memory-name ,right-memory-name))))
+(defun make-beta-node (rule-name position)
+  (let* ((left-node (if (eq position 0)
+			'top
+			(gethash (- position 1) nodes)))
+	 (right-node (gethash position nodes))
+	 (left-activate (make-sym "beta/" rule-name "-" left-node "/" right-node "-left"))
+	 (right-activate (make-sym "beta/" rule-name "-" left-node "/" right-node "-right"))
+	 (beta-node `(let ((left-memory  ',(make-sym "memory/" left-node))
+			   (right-memory ',(make-sym "memory/" right-node)))
+		       (defun ,left-activate (key token timestamp)
+			 (dolist (fact (contents-of right-memory))
+			   (store key (append token (list fact)) ',(make-sym "memory/" left-activate))
+			   (propagate key (append token (list fact)) timestamp ',left-activate)))
+		       (defun ,right-activate (key fact timestamp)
+			 (dolist (tok (contents-of left-memory))
+			   (store key (append tok (list fact)) ',(make-sym "memory/" right-activate))
+			   (propagate key (append tok (list fact)) timestamp ',right-activate))))))
+    (pprint beta-node)
+    (eval beta-node)))
+
 
 (defun make-node-with-literal-constraint (rule-name deftemplate-name slot-name slot-constraint position)
   (let ((defstruct-name (make-sym "deftemplate/" deftemplate-name))
