@@ -18,8 +18,8 @@
   salience token timestamp
   rhs-func prod-mem)
 
-(defparameter variable-bindings (make-hash-table))
-(defparameter fact-bindings (make-hash-table))
+;(defparameter variable-bindings (make-hash-table))
+;(defparameter fact-bindings (make-hash-table))
 (defparameter nodes (make-hash-table))
 
 ;;; Helper methods
@@ -182,6 +182,11 @@
     (setf conflict-resolution-strategy strategy))
 
 
+  ; Conditional element macros
+  (defmacro exists (&rest conditional-elements)
+    `(not (not ,@conditional-elements)))
+
+
   ;; Private API
   (defun add-to-production-nodes (node)
     "Add <node> to the list of production nodes"
@@ -342,10 +347,10 @@
   (let ((rhs (cdr (member '=> body)))
 	(lhs (ldiff body (member '=> body))))
     `(progn
-;       (let ((fact-bindings (make-hash-table))
-;	     (variable-bindings (make-hash-table)))
+       (let ((fact-bindings (make-hash-table))
+	     (variable-bindings (make-hash-table)))
 	 (compile-lhs ,name ,@lhs)
-	 (compile-rhs ,name ,@rhs))))
+	 (compile-rhs ,name ,@rhs)))))
 
 (defmacro compile-lhs (rule-name &body lhs)
   `(progn
@@ -369,13 +374,9 @@
 (defmacro parse-ce (rule-name conditional-element)
   (let ((ce-type (car conditional-element)))
     (case ce-type
-      (exists `(parse-exists-ce ,rule-name ,conditional-element))
       (not `(parse-not-ce ,rule-name ,conditional-element))
       (test `(parse-test-ce ,rule-name ,conditional-element))
       (otherwise `(parse-pattern-ce ,rule-name nil ,conditional-element)))))
-
-(defmacro parse-exists-ce (rule-name &rest conditional-elements)
-  `(parse-ce ,rule-name (not (not ,@conditional-elements))))
 
 (defmacro parse-not-ce (rule-name &rest conditional-elements)
   ; TBD
@@ -418,7 +419,7 @@
     prev-node))
 
 (defun make-beta-node (rule-name deftemplate-name position)
-  (print 'beta))
+  (print (list 'beta position)))
 
 (defun make-node-with-literal-constraint (rule-name deftemplate-name slot-name slot-constraint position)
   (let ((defstruct-name (make-sym "deftemplate/" deftemplate-name))
