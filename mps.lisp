@@ -316,7 +316,29 @@
 
 ;;; defrule
 (defmacro defrule (name &body body)
-  (declare (ignore docstring))
+  "Rules are defined using the defrule construct.
+
+   Syntax:
+   <defrule-construct>
+     ::= (defrule <rulename>
+           <conditional-element>*
+           =>
+           <action>*)
+
+   <conditional-element>
+     ::= <template-pattern-CE> | <assigned-pattern-CE> |  
+         <not-CE> | <test-CE> | <exists-CE>
+
+   <template-pattern-CE> ::= (<deftemplate-name> <single-field-LHS-slot>*)
+   <assigned-pattern-CE> ::= <single-field-variable> <- <template-pattern-CE>
+
+   <not-CE>              ::= (not <conditional-element>)  
+   <test-CE>             ::= (test <function-call>) 
+   <exists-CE>           ::= (exists <conditional-element>+) 
+
+   <single-field-LHS-slot>
+     ::= (<slot-name> [<single-field-variable>] <constraint>)
+  "
   (let ((rhs (cdr (member '=> body)))
 	(lhs (ldiff body (member '=> body))))
     `(progn
@@ -325,7 +347,6 @@
 	 (compile-lhs ,name ,@lhs)
 	 (compile-rhs ,name ,@rhs))))
 
-;; defrule - LHS
 (defmacro compile-lhs (rule-name &body lhs)
   `(progn
      (setf variable-bindings (make-hash-table))
@@ -348,13 +369,17 @@
 (defmacro parse-ce (rule-name conditional-element)
   (let ((ce-type (car conditional-element)))
     (case ce-type
+      (exists `(parse-exists-ce ,rule-name ,conditional-element))
       (not `(parse-not-ce ,rule-name ,conditional-element))
       (test `(parse-test-ce ,rule-name ,conditional-element))
       (otherwise `(parse-pattern-ce ,rule-name nil ,conditional-element)))))
 
-(defmacro parse-not-ce (rule-name variable &rest conditional-elements)
+(defmacro parse-exists-ce (rule-name &rest conditional-elements)
+  `(parse-ce ,rule-name (not (not ,@conditional-elements))))
+
+(defmacro parse-not-ce (rule-name &rest conditional-elements)
   ; TBD
-  (print (list 'not rule-name variable conditional-elements)))
+  (print (list 'not rule-name conditional-elements)))
 
 (defmacro parse-test-ce (rule-name variable conditional-element)
   ; TBD
@@ -439,10 +464,13 @@
 	    (setf (gethash slot-binding variable-bindings) (list slot-accessor fact-variable (list position)))
 	    (when (null slot-constraint)
 	      t))
-	  (unless (member position (caddr (gethash slot-binding variable-bindings)))
-	    (push (caddr (gethash slot-binding variable-bindings)) position)
-	    (when (null slot-constraint)
-	      t))))))
+	  (if (member position (caddr (gethash slot-binding variable-bindings)))
+	      `(eq (,(car (gethash slot-binding variable-bindings)) fact) (,slot-accessor fact))
+	      (progn
+		(push (caddr (gethash slot-binding variable-bindings)) position)
+		(when (null slot-constraint)
+		  t)))))))
+
 
 (defun expand-variable (variable-name)
   (car (gethash variable-name variable-bindings)))
@@ -452,9 +480,7 @@
 	       (nsubst (car value) key form))
 	   variable-bindings)
   form)
-	   
 
-;; defrule - RHS
 (defun make-variable-binding (key value)
   ;; variable-name : (accessor variable)
   `(,key (,(car value) ,(cadr value))))
