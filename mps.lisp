@@ -18,8 +18,10 @@
   salience token timestamp
   rhs-func prod-mem)
 
-;(defparameter variable-bindings (make-hash-table))
-;(defparameter fact-bindings (make-hash-table))
+(defparameter print-generated-code t)
+
+(defparameter variable-bindings (make-hash-table))
+(defparameter fact-bindings (make-hash-table))
 (defparameter nodes (make-hash-table))
 
 ;;; Helper methods
@@ -95,17 +97,23 @@
     (funcall conflict-resolution-strategy (flatten (get-conflict-set))))
 
   (defun assert (&rest facts)
-    "Add <facts> to the working memory and Rete Network."
-    (incf timestamp)
-    (dolist (fact facts)
-      (incf fact-index)
-      (unless (gethash fact working-memory)
-	(setf (gethash fact working-memory) fact-index)
-	(setf (gethash fact-index working-memory) fact)
-	(mapcar #'(lambda (node)
-		    (funcall node '+ fact timestamp))
-		(gethash (type-of fact) (gethash 'root rete-network)))))
-    t)
+    "Add <facts> to the working memory and Rete Network.
+
+     Identical (tested with equalp) are not allowed and will not be
+     processed. The number of facts asserted is returned."
+
+    (let ((count 0))
+      (incf timestamp)
+      (dolist (fact facts)
+	(unless (gethash fact working-memory)
+	  (incf fact-index)
+	  (setf (gethash fact working-memory) fact-index)
+	  (setf (gethash fact-index working-memory) fact)
+	  (incf count)
+	  (mapcar #'(lambda (node)
+		      (funcall node '+ fact timestamp))
+		  (gethash (type-of fact) (gethash 'root rete-network)))))
+      count))
 
   (defun clear ()
     "Clear the engine"
@@ -186,6 +194,9 @@
   (defmacro exists (&rest conditional-elements)
     `(not (not ,@conditional-elements)))
 
+  (defmacro forall (conditional-element &rest conditional-elements)
+    `(not ,conditional-element (not ,@conditional-elements)))
+
 
   ;; Private API
   (defun add-to-production-nodes (node)
@@ -254,7 +265,7 @@
 							   (gethash memory rete-network)))))))
 ;;; deftemplate
 ;;;
-;;; (deftemplate <deftemplate-name> [<comment>] 
+;;; (deftemplate <deftemplate-name>
 ;;;   <single-slot-definition>*) 
 ;;; 
 ;;; <single-slot-definition>  
@@ -314,7 +325,7 @@
     `(progn
        (defstruct ,defstruct-name
 	 ,@(mapcar #'macroexpand-1 slots))
-     
+
        (defmacro ,name (&rest slots)
 	 (call-defstruct-constructor ',defstruct-constructor slots)))))
 
@@ -406,14 +417,17 @@
 		    (symbolp slot-constraint))
 		(make-node-with-symbol-constraint rule-name deftemplate-name slot-name slot-binding slot-constraint variable position)
 		(make-node-with-literal-constraint rule-name deftemplate-name slot-name slot-constraint position))
-	  (pprint alpha-node)
+	  (when print-generated-code
+	    (pprint alpha-node))
 	  (eval alpha-node)
 	  (if prev-node
 	      (progn
-		(print `(connect-nodes ,prev-node ,alpha-node-name))
+		(when print-generated-code
+		  (print `(connect-nodes ,prev-node ,alpha-node-name)))
 		(connect-nodes prev-node alpha-node-name))
 	      (progn
-		(print `(add-to-root ,(car conditional-element) ,alpha-node-name))
+		(when print-generated-code
+		  (print `(add-to-root ,(car conditional-element) ,alpha-node-name)))
 		(add-to-root (car conditional-element) alpha-node-name)))
 	  (setf prev-node alpha-node-name))))
     prev-node))
@@ -423,20 +437,23 @@
 			'top
 			(gethash (- position 1) nodes)))
 	 (right-node (gethash position nodes))
-	 (left-activate (make-sym "beta/" rule-name "-" left-node "/" right-node "-left"))
-	 (right-activate (make-sym "beta/" rule-name "-" left-node "/" right-node "-right"))
+	 (beta-node-name (make-sym "beta/" rule-name "-" (format nil "~d" position)))
+	 (left-activate (make-sym beta-node-name "-left"))
+	 (right-activate (make-sym beta-node-name "-right"))
 	 (beta-node `(let ((left-memory  ',(make-sym "memory/" left-node))
 			   (right-memory ',(make-sym "memory/" right-node)))
 		       (defun ,left-activate (key token timestamp)
 			 (dolist (fact (contents-of right-memory))
-			   (store key (append token (list fact)) ',(make-sym "memory/" left-activate))
+			   (store key (append token (list fact)) ',(make-sym "memory/" beta-node-name))
 			   (propagate key (append token (list fact)) timestamp ',left-activate)))
 		       (defun ,right-activate (key fact timestamp)
 			 (dolist (tok (contents-of left-memory))
-			   (store key (append tok (list fact)) ',(make-sym "memory/" right-activate))
+			   (store key (append tok (list fact)) ',(make-sym "memory/" beta-node-name))
 			   (propagate key (append tok (list fact)) timestamp ',right-activate))))))
-    (pprint beta-node)
-    (eval beta-node)))
+    (when print-generated-code
+      (pprint beta-node))
+    (eval beta-node)
+    (setf (gethash position nodes) beta-node-name)))
 
 
 (defun make-node-with-literal-constraint (rule-name deftemplate-name slot-name slot-constraint position)
