@@ -156,16 +156,18 @@
 
   (defun retract (&rest facts)
     "Remove <facts> from the Working Memory and Rete network."
-    (incf timestamp)
-    (dolist (fact facts)
-      (when (gethash fact working-memory)
-	(setf fact-index (get-fact-index-of fact))
-	(remhash fact-index working-memory)
-	(remhash fact working-memory)
-	(mapcar #'(lambda (node)
-		    (funcall node '- fact timestamp))
-		(gethash (type-of fact) (gethash 'root rete-network)))))
-    t)
+    (let ((count 0))
+      (incf timestamp)
+      (dolist (fact facts)
+	(when (gethash fact working-memory)
+	  (setf fact-index (get-fact-index-of fact))
+	  (remhash fact-index working-memory)
+	  (remhash fact working-memory)
+	  (incf count)
+	  (mapcar #'(lambda (node)
+		      (funcall node '- fact timestamp))
+		  (gethash (type-of fact) (gethash 'root rete-network)))))
+      count))
 
   (defun run (&optional (limit -1))
     "Run"
@@ -202,13 +204,14 @@
   (defun add-to-production-nodes (node)
     "Add <node> to the list of production nodes"
     (if (gethash 'production-nodes rete-network)
-	(setf (gethash 'production-nodes rete-network) (append (gethash 'production-nodes rete-network) (list node)))
+	(setf (gethash 'production-nodes rete-network) (push (gethash 'production-nodes rete-network) node))
 	(setf (gethash 'production-nodes rete-network) (list node))))
 
   (defun add-to-root (type node)
     "Add <node> as a successor to the type-node for <type>"
+    (print `(add-to-root :type ,type :node ,node))
     (if (gethash type root-node)
-	(setf (gethash type root-node) (append (gethash type root-node) (list node)))
+	(setf (gethash type root-node) (push (gethash type root-node) node))
 	(setf (gethash type root-node) (list node))))
 
   (defun all-memory-nodes ()
@@ -226,8 +229,10 @@
 
   (defun connect-nodes (from to)
     "Connect <from> with <to> in the Rete Network"
+    (when print-generated-code
+      (print `(connect-nodes ,from ,to)))
     (if (gethash from rete-network)
-	(setf (gethash from rete-network) (append (gethash from rete-network) (list to)))
+	(setf (gethash from rete-network) (push (gethash from rete-network) to))
 	(setf (gethash from rete-network) (list to))))
 
   (defun contents-of (memory)
@@ -239,6 +244,7 @@
 
   (defun propagate (key token timestamp from)
     "Propagate <token> to all nodes that are connected to <from>"
+    (print `(propagate :key ,key :token ,token :timestamp ,timestamp :from ,from))
     (mapcar #'(lambda (node)
 		(funcall node key token timestamp))
 	    (gethash from rete-network)))
@@ -396,11 +402,14 @@
 
 (defmacro parse-pattern-ce (rule-name position variable conditional-element)
   (let ((deftemplate-name (car conditional-element)))
-    `(progn
+    `(let ((alpha-node '())
+	   (beta-node '()))
        (unless ,(null variable)
 	 (setf (gethash ',variable fact-bindings) ,position))
-       (setf (gethash ,position nodes) (make-alpha-nodes ',rule-name ',deftemplate-name ',conditional-element ',variable ,position))
-       (make-beta-node ',rule-name ,position))))
+       (setf alpha-node (make-alpha-nodes ',rule-name ',deftemplate-name ',conditional-element ',variable ,position))
+       (setf (gethash ,position nodes) alpha-node)
+       (setf beta-node (make-beta-node ',rule-name ,position))
+       (connect-nodes alpha-node (make-sym beta-node "-right")))))
 
 (defun make-alpha-nodes (rule-name deftemplate-name conditional-element variable position)
   (let ((prev-node '()))
@@ -421,14 +430,8 @@
 	    (pprint alpha-node))
 	  (eval alpha-node)
 	  (if prev-node
-	      (progn
-		(when print-generated-code
-		  (print `(connect-nodes ,prev-node ,alpha-node-name)))
-		(connect-nodes prev-node alpha-node-name))
-	      (progn
-		(when print-generated-code
-		  (print `(add-to-root ,(car conditional-element) ,alpha-node-name)))
-		(add-to-root (car conditional-element) alpha-node-name)))
+	      (connect-nodes prev-node alpha-node-name)
+	      (add-to-root (make-sym "deftemplate/" deftemplate-name) alpha-node-name))
 	  (setf prev-node alpha-node-name))))
     prev-node))
 
@@ -443,10 +446,12 @@
 	 (beta-node `(let ((left-memory  ',(make-sym "memory/" left-node))
 			   (right-memory ',(make-sym "memory/" right-node)))
 		       (defun ,left-activate (key token timestamp)
+			 (print (list ',left-activate key token timestamp))
 			 (dolist (fact (contents-of right-memory))
 			   (store key (append token (list fact)) ',(make-sym "memory/" beta-node-name))
 			   (propagate key (append token (list fact)) timestamp ',left-activate)))
 		       (defun ,right-activate (key fact timestamp)
+			 (print (list ',right-activate key fact timestamp))
 			 (dolist (tok (contents-of left-memory))
 			   (store key (append tok (list fact)) ',(make-sym "memory/" beta-node-name))
 			   (propagate key (append tok (list fact)) timestamp ',right-activate))))))
@@ -455,12 +460,12 @@
     (eval beta-node)
     (setf (gethash position nodes) beta-node-name)))
 
-
 (defun make-node-with-literal-constraint (rule-name deftemplate-name slot-name slot-constraint position)
   (let ((defstruct-name (make-sym "deftemplate/" deftemplate-name))
 	(node-name (make-sym "alpha/" rule-name "-" (format nil "~A" position) "/" deftemplate-name "-" slot-name)))
     (values
      `(defun ,node-name (key fact timestamp)
+	(print (list ',node-name key fact timestamp))
 	(when (eq (,(make-sym defstruct-name "-" slot-name) fact)
 		  ,slot-constraint)
 	  (unless (consp fact)
@@ -479,6 +484,7 @@
 			 binding-constraint)))
     (values
      `(defun ,node-name (key fact timestamp)
+	(print (list ',node-name key fact timestamp))
 	(when ,constraint
 	  (unless (consp fact)
 	    (setf fact (list fact)))
@@ -536,6 +542,7 @@
       (setf rhs '(t)))
     (let ((rhs-function
 	   `(defun ,(make-sym "RHS/" rule-name) (activation)
+	      (print (list ',(make-sym "RHS/" rule-name) activation))
 	      (let* ((token (activation-token activation))
 		     ,@list-of-fact-bindings
 		     ,@list-of-variable-bindings)
