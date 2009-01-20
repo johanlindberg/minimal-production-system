@@ -203,9 +203,11 @@
   ;; Private API
   (defun add-to-production-nodes (node)
     "Add <node> to the list of production nodes"
-    (if (gethash 'production-nodes rete-network)
-	(setf (gethash 'production-nodes rete-network) (push (gethash 'production-nodes rete-network) node))
-	(setf (gethash 'production-nodes rete-network) (list node))))
+    (let ((production-memory (make-sym "memory/" node)))
+      (print `(add-to-production-nodes :node ,node))
+      (if (gethash 'production-nodes rete-network)
+	  (setf (gethash 'production-nodes rete-network) (push (gethash 'production-nodes rete-network) production-memory))
+	  (setf (gethash 'production-nodes rete-network) (list production-memory)))))
 
   (defun add-to-root (type node)
     "Add <node> as a successor to the type-node for <type>"
@@ -367,7 +369,8 @@
        (let ((fact-bindings (make-hash-table))
 	     (variable-bindings (make-hash-table)))
 	 (compile-lhs ,name ,@lhs)
-	 (compile-rhs ,name ,@rhs)))))
+	 (compile-rhs ',name ,@rhs)
+	 (make-production-node ',name)))))
 
 (defmacro compile-lhs (rule-name &rest lhs)
   `(parse ,rule-name 0 ,@lhs))
@@ -442,37 +445,54 @@
 	 (beta-node-name (make-sym "beta/" rule-name "-" (format nil "~d" position)))
 	 (left-activate (make-sym beta-node-name "-left"))
 	 (right-activate (make-sym beta-node-name "-right"))
-	 (beta-node '()))
-    (if left-node
-	(setf beta-node `(let ((left-memory  ',(make-sym "memory/" left-node))
+	 (beta-node (if left-node
+			`(let ((left-memory  ',(make-sym "memory/" left-node))
 			       (right-memory ',(make-sym "memory/" right-node)))
 			   (defun ,left-activate (key token timestamp)
-			     (print (list ',left-activate key token timestamp))
+			     (print (list ',left-activate :key key :token token :timestamp timestamp))
 			     (dolist (fact (contents-of right-memory))
 			       (store key (append token (list fact)) ',(make-sym "memory/" beta-node-name))
-			       (propagate key (append token (list fact)) timestamp ',left-activate)))
+			       (propagate key (append token (list fact)) timestamp ',beta-node-name)))
 			   (defun ,right-activate (key fact timestamp)
-			     (print (list ',right-activate key fact timestamp))
+			     (print (list ',right-activate :key key :fact fact :timestamp timestamp))
 			     (dolist (tok (contents-of left-memory))
 			       (store key (append tok (list fact)) ',(make-sym "memory/" beta-node-name))
-			       (propagate key (append tok (list fact)) timestamp ',right-activate)))))
-	;; Left-input adapter
-	(setf beta-node `(let ((right-memory ',(make-sym "memory/" right-node)))
-			   (defun ,right-activate (key fact timestamp)
-			     (print (list ',right-activate key fact timestamp))
-			     (store key (list fact) ',(make-sym "memory/" beta-node-name))
-			     (propagate key (list fact) timestamp ',right-activate)))))
+			       (propagate key (append tok (list fact)) timestamp ',beta-node-name))))
+			;; Left-input adapter
+			`(defun ,right-activate (key fact timestamp)
+			   (print (list ',right-activate :key key :fact fact :timestamp timestamp))
+			   (store key (list fact) ',(make-sym "memory/" beta-node-name))
+			   (propagate key (list fact) timestamp ',beta-node-name)))))
     (when print-generated-code
       (pprint beta-node))
     (eval beta-node)
     (setf (gethash position nodes) beta-node-name)))
+
+(defun make-production-node (rule-name)
+  (print `(make-production-node ,rule-name))
+  (let* ((production-node-name (make-sym "production/" rule-name))
+	 (production-memory (make-sym "memory/production/" rule-name))
+	 (production-node `(defun ,production-node-name (key token timestamp)
+			     (print (list ',production-node-name :key key :token token :timestamp timestamp))
+			     (store key (make-activation :rule ',rule-name
+							 :salience 0
+							 :token token
+							 :timestamp timestamp
+							 :rhs-func #',(make-sym "rhs/" rule-name)
+							 :prod-mem ',production-memory)
+				    ',production-memory))))
+    (when print-generated-code
+      (pprint production-node))
+    (eval production-node)
+    (connect-nodes (gethash (- (hash-table-count nodes) 1) nodes) production-node-name)
+    (add-to-production-nodes production-node-name)))
 
 (defun make-node-with-literal-constraint (rule-name deftemplate-name slot-name slot-constraint position)
   (let ((defstruct-name (make-sym "deftemplate/" deftemplate-name))
 	(node-name (make-sym "alpha/" rule-name "-" (format nil "~A" position) "/" deftemplate-name "-" slot-name)))
     (values
      `(defun ,node-name (key fact timestamp)
-	(print (list ',node-name key fact timestamp))
+	(print (list ',node-name :key key :fact fact :timestamp timestamp))
 	(when (eq (,(make-sym defstruct-name "-" slot-name) fact)
 		  ,slot-constraint)
 	  (unless (consp fact)
@@ -491,7 +511,7 @@
 			 binding-constraint)))
     (values
      `(defun ,node-name (key fact timestamp)
-	(print (list ',node-name key fact timestamp))
+	(print (list ',node-name :key key :fact fact :timestamp timestamp))
 	(when ,constraint
 	  (unless (consp fact)
 	    (setf fact (list fact)))
@@ -538,7 +558,7 @@
   ;; variable-name : position
   `(,key (nth ,value token)))
 
-(defmacro compile-rhs (rule-name &body rhs)
+(defun compile-rhs (rule-name &rest rhs)
   (let ((list-of-fact-bindings '())
 	(list-of-variable-bindings '()))
     (maphash #'(lambda (key value)
@@ -547,11 +567,13 @@
 		 (push (make-variable-binding key value) list-of-variable-bindings)) variable-bindings)
     (when (null rhs)
       (setf rhs '(t)))
-    (let ((rhs-function
-	   `(defun ,(make-sym "RHS/" rule-name) (activation)
-	      (print (list ',(make-sym "RHS/" rule-name) activation))
-	      (let* ((token (activation-token activation))
-		     ,@list-of-fact-bindings
-		     ,@list-of-variable-bindings)
-		,@rhs))))
-      (pprint rhs-function))))
+    (let* ((rhs-function-name (make-sym "RHS/" rule-name))
+	   (rhs-function `(defun ,rhs-function-name (activation)
+			    (print (list ',rhs-function-name activation))
+			    (let* ((token (activation-token activation))
+				   ,@list-of-fact-bindings
+				   ,@list-of-variable-bindings)
+			      ,@rhs))))
+      (when print-generated-code
+	(pprint rhs-function))
+      (eval rhs-function))))
