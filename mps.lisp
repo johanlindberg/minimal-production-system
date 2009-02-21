@@ -369,7 +369,7 @@
        (let ((fact-bindings (make-hash-table))
 	     (variable-bindings (make-hash-table)))
 	 (compile-lhs ,name ,@lhs)
-	 (compile-rhs ',name ,@rhs)
+	 (compile-rhs ',name ',@rhs)
 	 (make-production-node ',name)))))
 
 (defmacro compile-lhs (rule-name &rest lhs)
@@ -546,7 +546,7 @@
 
 (defun expand-variables (form)
   (maphash #'(lambda (key value)
-	       (nsubst (car value) key form))
+	       (nsubst `(,(car value) fact) key form))
 	   variable-bindings)
   form)
 
