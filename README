@@ -21,6 +21,14 @@ lots and lots of debug information. You can turn most of it off by setting
 print-generated-code to nil but you'll still see how facts/tokens propagate
 through the Rete network.
 
+Discussion
+----------
+I really, really, want to get rid of the deftemplate construct. It might seem
+stupid, but I'd rather have the defrule expand into code that handles both
+defstructs and defclasses instead of a special construct only for MPS.
+
+Simplest example possible
+-------------------------
 CL-USER> (in-package :mps)
 #<Package "MPS">
 MPS> (deftemplate foo (slot bar))
