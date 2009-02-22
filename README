@@ -13,4 +13,91 @@ Common Lisp syntax instead.
 There's a bit more info about the CLIPS expirement on my old blog // comments
 are lies! See http://commentsarelies.blogspot.com/search/label/MPS
 
+Current Status
+--------------
+Currently (2009-02-22) MPS can compile very simple rules and execute them. And
+that's about it. Not very useful but at least it's a start. Also, it spits out
+lots and lots of debug information. You can turn most of it off by setting 
+print-generated-code to nil but you'll still see how facts/tokens propagate
+through the Rete network.
 
+CL-USER> (in-package :mps)
+#<Package "MPS">
+MPS> (deftemplate foo (slot bar))
+FOO
+MPS> (defrule bar-larger-than-1
+       ?foo <- (foo (bar ?bar (> ?bar 1)))
+       =>
+       (format t "~&~A ~A~%" ?foo ?bar))
+
+(DEFUN ALPHA/BAR-LARGER-THAN-1-0/FOO-BAR (KEY FACT TIMESTAMP)
+  (PRINT (LIST 'ALPHA/BAR-LARGER-THAN-1-0/FOO-BAR
+               :KEY
+               KEY
+               :FACT
+               FACT
+               :TIMESTAMP
+               TIMESTAMP))
+  (WHEN (> (DEFTEMPLATE/FOO-BAR FACT) 1)
+    (UNLESS (CONSP FACT) (SETF FACT (LIST FACT)))
+    (STORE KEY FACT 'MEMORY/ALPHA/BAR-LARGER-THAN-1-0/FOO-BAR)
+    (PROPAGATE KEY FACT TIMESTAMP 'ALPHA/BAR-LARGER-THAN-1-0/FOO-BAR)))
+(ADD-TO-ROOT :TYPE DEFTEMPLATE/FOO :NODE ALPHA/BAR-LARGER-THAN-1-0/FOO-BAR) 
+(DEFUN BETA/BAR-LARGER-THAN-1-0-RIGHT (KEY FACT TIMESTAMP)
+  (PRINT (LIST 'BETA/BAR-LARGER-THAN-1-0-RIGHT
+               :KEY
+               KEY
+               :FACT
+               FACT
+               :TIMESTAMP
+               TIMESTAMP))
+  (STORE KEY FACT 'MEMORY/BETA/BAR-LARGER-THAN-1-0)
+  (PROPAGATE KEY FACT TIMESTAMP 'BETA/BAR-LARGER-THAN-1-0))
+(CONNECT-NODES ALPHA/BAR-LARGER-THAN-1-0/FOO-BAR BETA/BAR-LARGER-THAN-1-0-RIGHT) 
+(DEFUN RHS/BAR-LARGER-THAN-1 (ACTIVATION)
+  (PRINT (LIST 'RHS/BAR-LARGER-THAN-1 ACTIVATION))
+  (LET* ((TOKEN (ACTIVATION-TOKEN ACTIVATION))
+         (?FOO (NTH 0 TOKEN))
+         (?BAR (DEFTEMPLATE/FOO-BAR ?FOO)))
+    (FORMAT T "~&~A ~A~%" ?FOO ?BAR)))
+(MAKE-PRODUCTION-NODE BAR-LARGER-THAN-1) 
+(DEFUN PRODUCTION/BAR-LARGER-THAN-1 (KEY TOKEN TIMESTAMP)
+  (PRINT (LIST 'PRODUCTION/BAR-LARGER-THAN-1
+               :KEY
+               KEY
+               :TOKEN
+               TOKEN
+               :TIMESTAMP
+               TIMESTAMP))
+  (STORE KEY
+         (MAKE-ACTIVATION
+           :RULE
+           'BAR-LARGER-THAN-1
+           :SALIENCE
+           0
+           :TOKEN
+           TOKEN
+           :TIMESTAMP
+           TIMESTAMP
+           :RHS-FUNC
+           #'RHS/BAR-LARGER-THAN-1
+           :PROD-MEM
+           'MEMORY/PRODUCTION/BAR-LARGER-THAN-1)
+         'MEMORY/PRODUCTION/BAR-LARGER-THAN-1))
+(CONNECT-NODES BETA/BAR-LARGER-THAN-1-0 PRODUCTION/BAR-LARGER-THAN-1) 
+(ADD-TO-PRODUCTION-NODES :NODE PRODUCTION/BAR-LARGER-THAN-1) (MEMORY/PRODUCTION/BAR-LARGER-THAN-1)
+MPS> (assert (foo (bar 2)))
+
+(ALPHA/BAR-LARGER-THAN-1-0/FOO-BAR :KEY + :FACT #S(DEFTEMPLATE/FOO :BAR 2) :TIMESTAMP 1) 
+(PROPAGATE :KEY + :TOKEN (#S(DEFTEMPLATE/FOO :BAR 2)) :TIMESTAMP 1 :FROM ALPHA/BAR-LARGER-THAN-1-0/FOO-BAR) 
+(BETA/BAR-LARGER-THAN-1-0-RIGHT :KEY + :FACT (#S(DEFTEMPLATE/FOO :BAR 2)) :TIMESTAMP 1) 
+(PROPAGATE :KEY + :TOKEN (#S(DEFTEMPLATE/FOO :BAR 2)) :TIMESTAMP 1 :FROM BETA/BAR-LARGER-THAN-1-0) 
+(PRODUCTION/BAR-LARGER-THAN-1 :KEY + :TOKEN (#S(DEFTEMPLATE/FOO :BAR 2)) :TIMESTAMP 1) 1
+MPS> (run)
+
+FIRE: BAR-LARGER-THAN-1
+
+(RHS/BAR-LARGER-THAN-1 #S(ACTIVATION :RULE BAR-LARGER-THAN-1 :SALIENCE 0 :TOKEN (#S(DEFTEMPLATE/FOO :BAR 2)) :TIMESTAMP 1 :RHS-FUNC #<Compiled-function RHS/BAR-LARGER-THAN-1 #x30004109463F> :PROD-MEM MEMORY/PRODUCTION/BAR-LARGER-THAN-1)) 
+#S(DEFTEMPLATE/FOO :BAR 2) 2
+1
+MPS> 
