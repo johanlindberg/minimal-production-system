@@ -265,7 +265,7 @@
 
   (defun propagate (key token timestamp from)
     "Propagate <token> to all nodes that are connected to <from>"
-    (when generated-code
+    (when funcall-generated-code
       (print `(propagate :key ,key :token ,token :timestamp ,timestamp :from ,from)))
     (mapcar #'(lambda (node)
 		(funcall node key token timestamp))
