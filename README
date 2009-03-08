@@ -15,14 +15,8 @@ are lies! See http://commentsarelies.blogspot.com/search/label/MPS
 
 Current Status
 --------------
-Currently (2009-02-23) MPS can compile very simple rules and execute them. And
-that's about it. Not very useful, but at least it's a start.
-
-Discussion
-----------
-I really, really, want to get rid of the deftemplate construct. It might seem
-stupid, but I'd rather have the defrule expand into code that handles both
-defstructs and defclasses instead of a special construct only for MPS.
+Currently (2009-02-23) MPS can compile very simple rules (one CE) and execute
+them. And that's about it. Not very useful, but at least it's a start.
 
 Simplest example possible
 -------------------------
@@ -30,7 +24,7 @@ CL-USER> (in-package :mps)
 #<Package "MPS">
 MPS> (setf generated-code t)
 T
-MPS> (deftemplate foo (slot bar))
+MPS> (defstruct foo bar)
 FOO
 MPS> (defrule bar-larger-than-1
        ?foo <- (foo (bar ?bar (> ?bar 1)))
@@ -39,23 +33,22 @@ MPS> (defrule bar-larger-than-1
 
 (DEFUN ALPHA/BAR-LARGER-THAN-1-0/FOO-BAR (KEY FACT TIMESTAMP)
   NIL
-  (WHEN (> (DEFTEMPLATE/FOO-BAR FACT) 1)
+  (WHEN (> (FOO-BAR FACT) 1)
     (UNLESS (CONSP FACT) (SETF FACT (LIST FACT)))
     (STORE KEY FACT 'MEMORY/ALPHA/BAR-LARGER-THAN-1-0/FOO-BAR)
     (PROPAGATE KEY FACT TIMESTAMP 'ALPHA/BAR-LARGER-THAN-1-0/FOO-BAR)))
-(ADD-TO-ROOT :TYPE DEFTEMPLATE/FOO :NODE ALPHA/BAR-LARGER-THAN-1-0/FOO-BAR) 
+(ADD-TO-ROOT :TYPE FOO :NODE ALPHA/BAR-LARGER-THAN-1-0/FOO-BAR) 
 (DEFUN BETA/BAR-LARGER-THAN-1-0-RIGHT (KEY FACT TIMESTAMP)
   NIL
   (STORE KEY FACT 'MEMORY/BETA/BAR-LARGER-THAN-1-0)
   (PROPAGATE KEY FACT TIMESTAMP 'BETA/BAR-LARGER-THAN-1-0))
-(CONNECT-NODES ALPHA/BAR-LARGER-THAN-1-0/FOO-BAR BETA/BAR-LARGER-THAN-1-0-RIGHT) 
+(CONNECT-NODES :FROM ALPHA/BAR-LARGER-THAN-1-0/FOO-BAR :TO BETA/BAR-LARGER-THAN-1-0-RIGHT) 
 (DEFUN RHS/BAR-LARGER-THAN-1 (ACTIVATION)
   NIL
   (LET* ((TOKEN (ACTIVATION-TOKEN ACTIVATION))
          (?FOO (NTH 0 TOKEN))
-         (?BAR (DEFTEMPLATE/FOO-BAR ?FOO)))
+         (?BAR (FOO-BAR ?FOO)))
     (FORMAT T "~&~A ~A~%" ?FOO ?BAR)))
-(MAKE-PRODUCTION-NODE BAR-LARGER-THAN-1) 
 (DEFUN PRODUCTION/BAR-LARGER-THAN-1 (KEY TOKEN TIMESTAMP)
   NIL
   (STORE KEY
@@ -73,12 +66,12 @@ MPS> (defrule bar-larger-than-1
            :PROD-MEM
            'MEMORY/PRODUCTION/BAR-LARGER-THAN-1)
          'MEMORY/PRODUCTION/BAR-LARGER-THAN-1))
-(CONNECT-NODES BETA/BAR-LARGER-THAN-1-0 PRODUCTION/BAR-LARGER-THAN-1) 
-(ADD-TO-PRODUCTION-NODES :NODE PRODUCTION/BAR-LARGER-THAN-1) (MEMORY/PRODUCTION/BAR-LARGER-THAN-1)
-MPS> (assert (foo (bar 2)))
+(CONNECT-NODES :FROM BETA/BAR-LARGER-THAN-1-0 :TO PRODUCTION/BAR-LARGER-THAN-1) 
+(ADD-TO-PRODUCTION-NODES :NODE PRODUCTION/BAR-LARGER-THAN-1) BAR-LARGER-THAN-1
+MPS> (assert #S(foo :bar 2))
 1
 MPS> (run)
 
-#S(DEFTEMPLATE/FOO :BAR 2) 2
+#S(FOO :BAR 2) 2
 1
 MPS> 
