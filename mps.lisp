@@ -29,6 +29,9 @@
 (defparameter generated-code nil)
 (defparameter funcall-generated-code nil)
 
+(declaim (optimize (speed 0)
+		   (space 0)
+		   (debug 3)))
 
 ;;; Watch parameters
 (defparameter activations nil)
@@ -145,7 +148,7 @@
     (let ((result '()))
       (maphash #'(lambda (key value)
 		   (when (numberp key)
-		     (push value result)))
+		     (cons value result)))
 	     working-memory)
       result))
     
@@ -203,7 +206,7 @@
       (when generated-code
 	(print `(add-to-production-nodes :node ,node)))
       (if (gethash 'production-nodes rete-network)
-	  (setf (gethash 'production-nodes rete-network) (push (gethash 'production-nodes rete-network) production-memory))
+	  (setf (gethash 'production-nodes rete-network) (cons production-memory (gethash 'production-nodes rete-network)))
 	  (setf (gethash 'production-nodes rete-network) (list production-memory)))))
 
   (defun add-to-root (type node)
@@ -211,7 +214,7 @@
     (when generated-code
       (print `(add-to-root :type ,type :node ,node)))
     (if (gethash type root-node)
-	(setf (gethash type root-node) (push (gethash type root-node) node))
+	(setf (gethash type root-node) (cons node (gethash type root-node)))
 	(setf (gethash type root-node) (list node))))
 
   (defun all-memory-nodes ()
@@ -223,7 +226,7 @@
 		     (when (and (> (length skey) 7)
 				(string-equal "MEMORY/"
 					      (subseq skey 0 7)))
-		       (setf mem-nodes (append (list key) mem-nodes)))))
+		       (setf mem-nodes (cons key mem-nodes)))))
 	       rete-network)
       mem-nodes))
 
@@ -232,7 +235,7 @@
     (when generated-code
       (print `(connect-nodes :from ,from :to ,to)))
     (if (gethash from rete-network)
-	(setf (gethash from rete-network) (push (gethash from rete-network) to))
+	(setf (gethash from rete-network) (cons to (gethash from rete-network)))
 	(setf (gethash from rete-network) (list to))))
 
   (defun contents-of (memory)
@@ -247,7 +250,6 @@
     (when funcall-generated-code
       (print `(propagate :key ,key :token ,token :timestamp ,timestamp :from ,from)))
     (mapcar #'(lambda (node)
-		(print `(funcall ',node ',key ',token ',timestamp))
 		(funcall node key token timestamp))
 	    (gethash from rete-network)))
 
@@ -265,7 +267,7 @@
 	;; Add token
 	(if (gethash memory rete-network)
 	    (unless (member token (gethash memory rete-network) :test #'equalp)
-	      (setf (gethash memory rete-network) (flatten (push (gethash memory rete-network) token))))
+	      (setf (gethash memory rete-network) (flatten (cons token (gethash memory rete-network)))))
 	    (setf (gethash memory rete-network) (list token)))
 	;; Remove token
 	(if (gethash memory rete-network)
@@ -476,7 +478,7 @@
 	  (if (member position (caddr (gethash slot-binding variable-bindings)))
 	      `(eq (,(car (gethash slot-binding variable-bindings)) fact) (,slot-accessor fact))
 	      (progn
-		(push (caddr (gethash slot-binding variable-bindings)) position)
+		(push (caddr (gethash slot-binding variable-bindings)) position) ; XXX why push!? Is position really a place?
 		(when (null slot-constraint)
 		  t)))))))
 
@@ -502,9 +504,11 @@
   (let ((list-of-fact-bindings '())
 	(list-of-variable-bindings '()))
     (maphash #'(lambda (key value)
-		 (push (make-fact-binding key value) list-of-fact-bindings)) fact-bindings)
+		 (setf list-of-fact-bindings (cons (make-fact-binding key value) list-of-fact-bindings)))
+	     fact-bindings)
     (maphash #'(lambda (key value)
-		 (push (make-variable-binding key value) list-of-variable-bindings)) variable-bindings)
+		 (setf list-of-variable-bindings (cons (make-variable-binding key value) list-of-variable-bindings)))
+	     variable-bindings)
     (when (null rhs)
       (setf rhs '(t)))
     (let* ((rhs-function-name (make-sym "RHS/" rule-name))
