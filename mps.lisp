@@ -1,13 +1,18 @@
 ;;; Minimal Production System (MPS)
 
-;;; Comments marking what to adjust in order to remove deftemplates are: ;; DEFTEMPLATE
-
 (defpackage :mps
   (:use :common-lisp)
-  (:export :defrule :deftemplate ;; DEFTEMPLATE
-	   :agenda :assert-fact	:breadth :clear
-	   :depth :facts :get-strategy :load
-	   :modify :reset :run :set-strategy)
+  (:export :defrule
+	   :agenda
+	   :assert
+	   :breadth
+	   :clear
+	   :depth
+	   :facts
+	   :load
+	   :modify
+	   :reset
+	   :run)
   (:shadow :assert))
 (in-package :mps)
 
@@ -21,13 +26,11 @@
   rhs-func prod-mem)
 
 ;;; Debug parameters
-
 (defparameter generated-code nil)
 (defparameter funcall-generated-code nil)
 
 
 ;;; Watch parameters
-
 (defparameter activations nil)
 (defparameter compilations t)
 (defparameter facts nil)
@@ -35,13 +38,11 @@
 (defparameter statistics nil)
 
 ;;; Compilation globals
-
 (defparameter variable-bindings (make-hash-table))
 (defparameter fact-bindings (make-hash-table))
 (defparameter nodes (make-hash-table))
 
 ;;; Helper methods
-
 (defun as-keyword (sym)
   "Returns <sym> as a keyword."
   (intern (string-upcase sym) :keyword))
@@ -76,20 +77,13 @@
     (rec x nil)))
 
 
-;;; Conflict resolution strategies
-;;; ------------------------------
+;;; Conflict resolution strategy
+;;; ----------------------------
 (defun order-by-salience (conflict-set)
   (stable-sort conflict-set #'(lambda (activation1 activation2)
 				(> (activation-salience activation1)
 				   (activation-salience activation2)))))
 		
-(defun breadth (conflict-set)
-  "Implementation of the conflict resolution strategy 'breadth'"
-  (order-by-salience (stable-sort conflict-set
-				  #'(lambda (activation1 activation2)
-				      (< (activation-timestamp activation1)
-					 (activation-timestamp activation2))))))
-
 (defun depth (conflict-set)
   "Implementation of the conflict resolution strategy 'depth'"
   (order-by-salience (stable-sort conflict-set
@@ -115,19 +109,24 @@
   (defun assert (&rest facts)
     "Add <facts> to the working memory and Rete Network.
 
-     Identical (tested with equalp) are not allowed and will not be
+     Identical facts (tested with equalp) are not allowed and will not be
      processed. The number of facts asserted is returned."
 
     (let ((count 0))
       (incf timestamp)
       (dolist (fact facts)
+	(when (numberp fact)
+	  (setf fact (get-fact-with-index fact)))
 	(unless (gethash fact working-memory)
 	  (incf fact-index)
 	  (setf (gethash fact working-memory) fact-index)
 	  (setf (gethash fact-index working-memory) fact)
 	  (incf count)
-	  (mapcar #'(lambda (node)
-		      (funcall node '+ fact timestamp))
+	  (mapcar #'(lambda (nodes)
+		      (if (consp nodes)
+			  (dolist (node nodes)
+			    (funcall node '+ fact timestamp))
+			  (funcall nodes '+ fact timestamp)))
 		  (gethash (type-of fact) (gethash 'root rete-network)))))
       count))
 
@@ -151,17 +150,6 @@
       result))
     
 
-  (defun get-strategy ()
-    "Return the current conflict resolution strategy."
-    conflict-resolution-strategy)
-
-  (defun modify (fact &rest slots)
-    "Modify <fact>"
-    (when (numberp fact)
-      (setf fact (get-fact-with-index fact)))
-    ; TBD
-    nil)
-
   (defun reset ()
     "Clear the Working Memory and Rete network memory nodes of facts."
     (clrhash working-memory)
@@ -175,6 +163,8 @@
     (let ((count 0))
       (incf timestamp)
       (dolist (fact facts)
+	(when (numberp fact)
+	  (setf fact (get-fact-with-index fact)))
 	(when (gethash fact working-memory)
 	  (setf fact-index (get-fact-index-of fact))
 	  (remhash fact-index working-memory)
@@ -196,17 +186,6 @@
 	(format rules "~&FIRE: ~A~%" (activation-rule activation))
 	(funcall (activation-rhs-func activation) activation)
 	(store '- activation (activation-prod-mem activation)))))
-
-  (defun set-strategy (strategy)
-    "This function sets the current conflict resolution strategy. The default strategy is depth. 
-
-     Syntax: 
-       (set-strategy #'<strategy-function>) 
- 
-     where <strategy-function> is either depth or breadth (which are provided in MPS), or a custom
-     function that performs conflict resolution. The agenda will be reordered to reflect the new
-     conflict resolution strategy."
-    (setf conflict-resolution-strategy strategy))
 
 
   ; Conditional element macros
@@ -268,6 +247,7 @@
     (when funcall-generated-code
       (print `(propagate :key ,key :token ,token :timestamp ,timestamp :from ,from)))
     (mapcar #'(lambda (node)
+		(print `(funcall ',node ',key ',token ',timestamp))
 		(funcall node key token timestamp))
 	    (gethash from rete-network)))
 
@@ -279,6 +259,8 @@
 
   (defun store (key token memory)
     "Add <token> to (if <key> is '+) or remove from (if <key> is '-) <memory>"
+    (when funcall-generated-code
+      (print `(store :key ,key :token ,token :memory ,memory)))
     (if (eq key '+)
 	;; Add token
 	(if (gethash memory rete-network)
@@ -290,73 +272,6 @@
 	    (setf (gethash memory rete-network) (remove-if #'(lambda (item)
 							       (equalp item token))
 							   (gethash memory rete-network)))))))
-;;; deftemplate
-;;;
-;;; (deftemplate <deftemplate-name>
-;;;   <single-slot-definition>*) 
-;;; 
-;;; <single-slot-definition>  
-;;;                ::= (slot <slot-name>  
-;;;                          <default-attribute>) 
-;;; 
-;;; <default-attribute>   
-;;;                ::= (default ?NONE | <expression>) | 
-;;;                    (default-dynamic <expression>)
-
-(defmacro slot (name &optional (default-form nil)) ;; DEFTEMPLATE
-  (cond ((null default-form)
-	 name)
-
-	;; required value
-	((and (eq (car default-form) 'default)
-	      (eq (cadr default-form) '?NONE))
-	 `(,name (error "The slot: ~A requires a value!" ',name)))
-
-	;; default value
-	((eq (car default-form) 'default)
-	 `(,name ',(eval (cadr default-form))))
-
-	;; default-dynamic value
-	((eq (car default-form) 'default-dynamic)
-	 `(,name ,(cadr default-form)))))
-
-(defun call-defstruct-constructor (constructor &rest slots) ;; DEFTEMPLATE
-  (apply constructor (mapcan #'(lambda (slot)
-				 `(,(as-keyword (car slot)) ,(cadr slot)))
-			     (car slots))))
-  
-(defmacro deftemplate (name &body slots) ;; DEFTEMPLATE
-  "
-  The deftemplate construct is used to create a template which can then
-  be used by non-ordered facts to access fields of the fact by name.
-
-  Syntax:
-  <deftemplate-construct>  
-    ::= (deftemplate <deftemplate-name> [<single-slot-definition>]*)
- 
-  <single-slot-definition>
-    ::= (slot <slot-name> [<default-attribute>])
- 
-  <default-attribute> 
-    ::= (default ?NONE | <expression>) |
-        (default-dynamic <expression>)
-
-  Examples:
-  (deftemplate object
-    (slot id (default-dynamic (gensym)))
-    (slot name (default ?NONE))           ; Makes name a required field!
-    (slot age))
-  "
-  (let ((defstruct-name (make-sym "deftemplate/" name))
-	(defstruct-constructor (make-sym "make-deftemplate/" name)))
-    `(progn
-       (defstruct ,defstruct-name
-	 ,@(mapcar #'macroexpand-1 slots))
-
-       (defmacro ,name (&rest slots)
-	 (call-defstruct-constructor ',defstruct-constructor slots)))))
-
-
 ;;; defrule
 (defmacro defrule (name &body body)
   "Rules are defined using the defrule construct.
@@ -372,7 +287,7 @@
      ::= <template-pattern-CE> | <assigned-pattern-CE> |  
          <not-CE> | <test-CE> | <exists-CE>
 
-   <template-pattern-CE> ::= (<deftemplate-name> <single-field-LHS-slot>*)
+   <template-pattern-CE> ::= (<defstruct-name> <single-field-LHS-slot>*)
    <assigned-pattern-CE> ::= <single-field-variable> <- <template-pattern-CE>
 
    <not-CE>              ::= (not <conditional-element>)  
@@ -389,7 +304,8 @@
 	     (variable-bindings (make-hash-table)))
 	 (compile-lhs ,name ,@lhs)
 	 (compile-rhs ',name ',@rhs)
-	 (make-production-node ',name)))))
+	 (make-production-node ',name))
+       ',name)))
 
 (defmacro compile-lhs (rule-name &rest lhs)
   `(parse ,rule-name 0 ,@lhs))
@@ -423,17 +339,17 @@
   `(print (list 'test ,rule-name ,position ,variable ,conditional-element)))
 
 (defmacro parse-pattern-ce (rule-name position variable conditional-element)
-  (let ((deftemplate-name (car conditional-element)))
+  (let ((defstruct-name (car conditional-element)))
     `(let ((alpha-node '())
 	   (beta-node '()))
        (unless ,(null variable)
 	 (setf (gethash ',variable fact-bindings) ,position))
-       (setf alpha-node (make-alpha-nodes ',rule-name ',deftemplate-name ',conditional-element ',variable ,position))
+       (setf alpha-node (make-alpha-nodes ',rule-name ',defstruct-name ',conditional-element ',variable ,position))
        (setf (gethash ,position nodes) alpha-node)
        (setf beta-node (make-beta-node ',rule-name ,position))
        (connect-nodes alpha-node (make-sym beta-node "-right")))))
 
-(defun make-alpha-nodes (rule-name deftemplate-name conditional-element variable position)
+(defun make-alpha-nodes (rule-name defstruct-name conditional-element variable position)
   (let ((prev-node '()))
     (dolist (slot (cdr conditional-element))
       (let* ((slot-name (car slot))
@@ -446,14 +362,14 @@
 	(multiple-value-bind (alpha-node alpha-node-name)
 	    (if (or (consp slot-constraint)
 		    (symbolp slot-constraint))
-		(make-node-with-symbol-constraint rule-name deftemplate-name slot-name slot-binding slot-constraint variable position)
-		(make-node-with-literal-constraint rule-name deftemplate-name slot-name slot-constraint position))
+		(make-node-with-symbol-constraint rule-name defstruct-name slot-name slot-binding slot-constraint variable position)
+		(make-node-with-literal-constraint rule-name defstruct-name slot-name slot-constraint position))
 	  (when generated-code
 	    (pprint alpha-node))
 	  (eval alpha-node)
 	  (if prev-node
 	      (connect-nodes prev-node alpha-node-name)
-	      (add-to-root (make-sym "deftemplate/" deftemplate-name) alpha-node-name)) ;; DEFTEMPLATE
+	      (add-to-root defstruct-name alpha-node-name))
 	  (setf prev-node alpha-node-name))))
     prev-node))
 
@@ -488,6 +404,8 @@
     (when generated-code
       (pprint beta-node))
     (eval beta-node)
+    (unless (eq position 0)
+      (connect-nodes left-node left-activate))
     (setf (gethash position nodes) beta-node-name)))
 
 (defun make-production-node (rule-name)
@@ -509,9 +427,8 @@
     (connect-nodes (gethash (- (hash-table-count nodes) 1) nodes) production-node-name)
     (add-to-production-nodes production-node-name)))
 
-(defun make-node-with-literal-constraint (rule-name deftemplate-name slot-name slot-constraint position)
-  (let ((defstruct-name (make-sym "deftemplate/" deftemplate-name)) ;; DEFTEMPLATE
-	(node-name (make-sym "alpha/" rule-name "-" (format nil "~A" position) "/" deftemplate-name "-" slot-name)))
+(defun make-node-with-literal-constraint (rule-name defstruct-name slot-name slot-constraint position)
+  (let ((node-name (make-sym "alpha/" rule-name "-" (format nil "~A" position) "/" defstruct-name "-" slot-name)))
     (values
      `(defun ,node-name (key fact timestamp)
 	,(when funcall-generated-code
@@ -524,9 +441,8 @@
 	  (propagate key fact timestamp ',node-name)))
      node-name)))
 
-(defun make-node-with-symbol-constraint (rule-name deftemplate-name slot-name slot-binding slot-constraint variable position)
-  (let* ((defstruct-name (make-sym "deftemplate/" deftemplate-name)) ;; DEFTEMPLATE
-	 (node-name (make-sym "alpha/" rule-name "-" (format nil "~A" position) "/" deftemplate-name "-" slot-name))
+(defun make-node-with-symbol-constraint (rule-name defstruct-name slot-name slot-binding slot-constraint variable position)
+  (let* ((node-name (make-sym "alpha/" rule-name "-" (format nil "~A" position) "/" defstruct-name "-" slot-name))
 	 (slot-accessor (make-sym defstruct-name "-" slot-name))
 	 (binding-constraint (parse-binding-constraint slot-binding slot-constraint slot-accessor variable position))
 	 (constraint (if slot-constraint
