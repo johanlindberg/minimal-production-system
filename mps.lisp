@@ -267,7 +267,8 @@
 	;; Add token
 	(if (gethash memory rete-network)
 	    (unless (member token (gethash memory rete-network) :test #'equalp)
-	      (setf (gethash memory rete-network) (flatten (cons token (gethash memory rete-network)))))
+	      (push token (gethash memory rete-network)))
+	      ;(setf (gethash memory rete-network) (flatten (cons token (gethash memory rete-network)))))
 	    (setf (gethash memory rete-network) (list token)))
 	;; Remove token
 	(if (gethash memory rete-network)
@@ -389,20 +390,22 @@
 			     ,(when funcall-generated-code
 				    `(print (list ',left-activate :key key :token token :timestamp timestamp)))
 			     (dolist (fact (contents-of right-memory))
-			       (store key (append token fact) ',(make-sym "memory/" beta-node-name))
-			       (propagate key (append token fact) timestamp ',beta-node-name)))
+			       (let ((tok (append token (list fact))))
+				 (store key tok ',(make-sym "memory/" beta-node-name))
+				 (propagate key tok timestamp ',beta-node-name))))
 			   (defun ,right-activate (key fact timestamp)
 			     ,(when funcall-generated-code
 				    `(print (list ',right-activate :key key :fact fact :timestamp timestamp)))
-			     (dolist (tok (contents-of left-memory))
-			       (store key (append tok fact) ',(make-sym "memory/" beta-node-name))
-			       (propagate key (append tok fact) timestamp ',beta-node-name))))
+			     (dolist (token (contents-of left-memory))
+			       (let ((tok (append token (list fact))))
+				 (store key tok ',(make-sym "memory/" beta-node-name))
+				 (propagate key tok timestamp ',beta-node-name)))))
 			;; Left-input adapter
 			`(defun ,right-activate (key fact timestamp)
 			   ,(when funcall-generated-code
 				  `(print (list ',right-activate :key key :fact fact :timestamp timestamp)))
-			   (store key fact ',(make-sym "memory/" beta-node-name))
-			   (propagate key fact timestamp ',beta-node-name)))))
+			   (store key (list fact) ',(make-sym "memory/" beta-node-name))
+			   (propagate key (list fact) timestamp ',beta-node-name)))))
     (when generated-code
       (pprint beta-node))
     (eval beta-node)
@@ -435,10 +438,7 @@
      `(defun ,node-name (key fact timestamp)
 	,(when funcall-generated-code
 	       `(print (list ',node-name :key key :fact fact :timestamp timestamp)))
-	(when (eq (,(make-sym defstruct-name "-" slot-name) fact)
-		  ,slot-constraint)
-	  (unless (consp fact)
-	    (setf fact (list fact)))
+	(when (eq (,(make-sym defstruct-name "-" slot-name) fact) ,slot-constraint)
 	  (store key fact ',(make-sym "memory/" node-name))
 	  (propagate key fact timestamp ',node-name)))
      node-name)))
@@ -455,8 +455,6 @@
 	,(when funcall-generated-code
 	       `(print (list ',node-name :key key :fact fact :timestamp timestamp)))
 	(when ,constraint
-	  (unless (consp fact)
-	    (setf fact (list fact)))
 	  (store key fact ',(make-sym "memory/" node-name))
 	  (propagate key fact timestamp ',node-name)))
      node-name)))
