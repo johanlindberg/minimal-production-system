@@ -4,7 +4,8 @@
   (:use :common-lisp)
   (:export :defrule
 	   :agenda
-	   :assert
+	   :assert-fact
+	   :assert-facts
 	   :breadth
 	   :clear
 	   :depth
@@ -12,8 +13,9 @@
 	   :load
 	   :modify
 	   :reset
-	   :run)
-  (:shadow :assert))
+	   :retract-fact
+	   :retract-facts
+	   :run))
 (in-package :mps)
 
 (defmacro ppexp (&body body)
@@ -106,10 +108,15 @@
 
   ;; Public API
   (defun agenda ()
-    "Return all activations on the agenda."
-    (funcall conflict-resolution-strategy (flatten (get-conflict-set))))
+    "Return the current agenda and the number of activations on it."
+    (let ((conflict-set (flatten (get-conflict-set))))
+      (values (funcall conflict-resolution-strategy conflict-set)
+	      (length conflict-set))))
 
-  (defun assert (&rest facts)
+  (defmacro assert-fact (fact)
+    `(assert-facts ,fact))
+
+  (defun assert-facts (&rest facts)
     "Add <facts> to the working memory and Rete Network.
 
      Identical facts (tested with equalp) are not allowed and will not be
@@ -161,7 +168,10 @@
 	    (all-memory-nodes))
     t)
 
-  (defun retract (&rest facts)
+  (defmacro retract-fact (fact)
+    `(retract-facts ,fact))
+
+  (defun retract-facts (&rest facts)
     "Remove <facts> from the Working Memory and Rete network."
     (let ((count 0))
       (incf timestamp)
@@ -206,7 +216,7 @@
       (when generated-code
 	(print `(add-to-production-nodes :node ,node)))
       (if (gethash 'production-nodes rete-network)
-	  (setf (gethash 'production-nodes rete-network) (cons production-memory (gethash 'production-nodes rete-network)))
+	  (push production-memory (gethash 'production-nodes rete-network))
 	  (setf (gethash 'production-nodes rete-network) (list production-memory)))))
 
   (defun add-to-root (type node)
@@ -214,7 +224,7 @@
     (when generated-code
       (print `(add-to-root :type ,type :node ,node)))
     (if (gethash type root-node)
-	(setf (gethash type root-node) (cons node (gethash type root-node)))
+	(push node (gethash type root-node))
 	(setf (gethash type root-node) (list node))))
 
   (defun all-memory-nodes ()
@@ -235,7 +245,7 @@
     (when generated-code
       (print `(connect-nodes :from ,from :to ,to)))
     (if (gethash from rete-network)
-	(setf (gethash from rete-network) (cons to (gethash from rete-network)))
+	(push to (gethash from rete-network))
 	(setf (gethash from rete-network) (list to))))
 
   (defun contents-of (memory)
@@ -268,7 +278,6 @@
 	(if (gethash memory rete-network)
 	    (unless (member token (gethash memory rete-network) :test #'equalp)
 	      (push token (gethash memory rete-network)))
-	      ;(setf (gethash memory rete-network) (flatten (cons token (gethash memory rete-network)))))
 	    (setf (gethash memory rete-network) (list token)))
 	;; Remove token
 	(if (gethash memory rete-network)
