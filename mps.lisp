@@ -45,6 +45,7 @@
 ;;; Compilation globals
 (defparameter variable-bindings (make-hash-table))
 (defparameter fact-bindings (make-hash-table))
+(defparameter ce-bindings (make-hash-table))
 (defparameter nodes (make-hash-table))
 
 ;;; Helper methods
@@ -138,6 +139,7 @@
 			    (funcall node '+ fact timestamp))
 			  (funcall nodes '+ fact timestamp)))
 		  (gethash (type-of fact) (gethash 'root rete-network)))))
+
       count))
 
   (defun clear ()
@@ -166,6 +168,7 @@
     (mapcar #'(lambda (memory)
 		(setf (gethash memory rete-network) '()))
 	    (all-memory-nodes))
+
     t)
 
   (defmacro retract-fact (fact)
@@ -186,6 +189,7 @@
 	  (mapcar #'(lambda (node)
 		      (funcall node '- fact timestamp))
 		  (gethash (type-of fact) (gethash 'root rete-network)))))
+
       count))
 
   (defun run (&optional (limit -1))
@@ -280,10 +284,10 @@
 	      (push token (gethash memory rete-network)))
 	    (setf (gethash memory rete-network) (list token)))
 	;; Remove token
-	(if (gethash memory rete-network)
-	    (setf (gethash memory rete-network) (remove-if #'(lambda (item)
-							       (equalp item token))
-							   (gethash memory rete-network)))))))
+	(when (gethash memory rete-network)
+	  (setf (gethash memory rete-network) (remove-if #'(lambda (item)
+							     (equalp item token))
+							 (gethash memory rete-network)))))))
 ;;; defrule
 (defmacro defrule (name &body body)
   "Rules are defined using the defrule construct.
@@ -309,10 +313,13 @@
    <single-field-LHS-slot>
      ::= (<slot-name> [<single-field-variable>] <constraint>)
   "
-  (let ((rhs (cdr (member '=> body)))
+  (let ((rhs (if (cdr (member '=> body))
+		 (cdr (member '=> body))
+		 `(t)))
 	(lhs (ldiff body (member '=> body))))
     `(progn
        (let ((fact-bindings (make-hash-table))
+	     (ce-bindings (make-hash-table))
 	     (variable-bindings (make-hash-table)))
 	 (compile-lhs ,name ,@lhs)
 	 (compile-rhs ',name ',@rhs)
@@ -400,15 +407,17 @@
 				    `(print (list ',left-activate :key key :token token :timestamp timestamp)))
 			     (dolist (fact (contents-of right-memory))
 			       (let ((tok (append token (list fact))))
-				 (store key tok ',(make-sym "memory/" beta-node-name))
-				 (propagate key tok timestamp ',beta-node-name))))
+				 (when (and ,@(make-binding-test position))
+				   (store key tok ',(make-sym "memory/" beta-node-name))
+				   (propagate key tok timestamp ',beta-node-name)))))
 			   (defun ,right-activate (key fact timestamp)
 			     ,(when funcall-generated-code
 				    `(print (list ',right-activate :key key :fact fact :timestamp timestamp)))
 			     (dolist (token (contents-of left-memory))
 			       (let ((tok (append token (list fact))))
-				 (store key tok ',(make-sym "memory/" beta-node-name))
-				 (propagate key tok timestamp ',beta-node-name)))))
+				 (when (and ,@(make-binding-test position))
+				   (store key tok ',(make-sym "memory/" beta-node-name))
+				   (propagate key tok timestamp ',beta-node-name))))))
 			;; Left-input adapter
 			`(defun ,right-activate (key fact timestamp)
 			   ,(when funcall-generated-code
@@ -421,6 +430,20 @@
     (unless (eq position 0)
       (connect-nodes left-node left-activate))
     (setf (gethash position nodes) beta-node-name)))
+
+(defun make-binding-test (position)
+  (let ((result '(t))) ; zero join
+    (maphash #'(lambda (k v)
+		 (declare (ignore k))
+		 (when (> (length v) 1)
+		   (let ((prev '()))
+		     (dolist (b v)
+		       (if (eql position (caddr b))
+			   (when prev
+			     (push `(equal (,(car b) (nth ,(caddr b) tok)) (,(car prev) (nth ,(caddr prev) tok))) result))
+			   (setf prev b))))))
+	     variable-bindings)
+    result))
 
 (defun make-production-node (rule-name)
   (let* ((production-node-name (make-sym "production/" rule-name))
@@ -469,26 +492,34 @@
      node-name)))
 
 (defun parse-binding-constraint (slot-binding slot-constraint slot-accessor variable position)
-  (let ((fact-variable variable))
+  (let ((fact-variable (if variable
+			   variable
+			   (gethash position ce-bindings)))
+	(binding (gethash slot-binding variable-bindings)))
     (when (not (null slot-binding))
       ;; Make sure that this slot-value is reachable in the RHS
-      (when (and (null fact-variable)
-		 (null (gethash slot-binding variable-bindings)))
+      (when (null fact-variable)
 	(setf fact-variable (gensym))
+	(setf (gethash position ce-bindings) fact-variable)
 	(setf (gethash fact-variable fact-bindings) position))
-      ;; Bind this variable to this CE
-      (if (not (gethash slot-binding variable-bindings))
-	  (progn
-	    (setf (gethash slot-binding variable-bindings) (list slot-accessor fact-variable (list position)))
-	    (when (null slot-constraint)
-	      t))
-	  (if (member position (caddr (gethash slot-binding variable-bindings)))
-	      `(eq (,(car (gethash slot-binding variable-bindings)) fact) (,slot-accessor fact))
-	      (progn
-		(push (caddr (gethash slot-binding variable-bindings)) position) ; XXX why push!? Is position really a place?
-		(when (null slot-constraint)
-		  t)))))))
 
+      (if (not binding)
+	  (progn ; This is the first binding for this variable
+	    (setf (gethash slot-binding variable-bindings) (list (list slot-accessor fact-variable position)))
+	    (when (null slot-constraint) t))
+	  
+	  (progn
+	    (dolist (b binding)
+	      ;; If this position already has a binding for this variable we'll
+	      ;; return a alpha-constraint
+	      (when (equal position (caddr b))
+		(return `(equal (,(car b) fact) (,slot-accessor fact)))))
+
+	    ;; Create a new binding
+	    (setf (gethash slot-binding variable-bindings)
+		  (append (gethash slot-binding variable-bindings)
+			  (list (list slot-accessor fact-variable position))))
+	    (when (null slot-constraint) t))))))
 
 (defun expand-variable (variable-name)
   (car (gethash variable-name variable-bindings)))
@@ -500,8 +531,8 @@
   form)
 
 (defun make-variable-binding (key value)
-  ;; variable-name : (accessor variable)
-  `(,key (,(car value) ,(cadr value))))
+  ;; variable-name : ((accessor fact-variable position) ...) -> (variable-name (accessor fact-variable))
+  `(,key (,(caar value) ,(cadar value))))
 
 (defun make-fact-binding (key value)
   ;; variable-name : position
@@ -511,13 +542,11 @@
   (let ((list-of-fact-bindings '())
 	(list-of-variable-bindings '()))
     (maphash #'(lambda (key value)
-		 (setf list-of-fact-bindings (cons (make-fact-binding key value) list-of-fact-bindings)))
+		 (push (make-fact-binding key value) list-of-fact-bindings))
 	     fact-bindings)
     (maphash #'(lambda (key value)
-		 (setf list-of-variable-bindings (cons (make-variable-binding key value) list-of-variable-bindings)))
+		 (push (make-variable-binding key value) list-of-variable-bindings))
 	     variable-bindings)
-    (when (null rhs)
-      (setf rhs '(t)))
     (let* ((rhs-function-name (make-sym "RHS/" rule-name))
 	   (rhs-function `(defun ,rhs-function-name (activation)
 			    ,(when funcall-generated-code
