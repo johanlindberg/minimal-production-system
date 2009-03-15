@@ -6,6 +6,7 @@
 	   :agenda
 	   :assert-fact
 	   :assert-facts
+	   :batch
 	   :breadth
 	   :clear
 	   :depth
@@ -141,6 +142,17 @@
 		  (gethash (type-of fact) (gethash 'root rete-network)))))
 
       count))
+
+  (defun batch (file)
+    "Allows batch processing of interactive commands by replacing standard
+     input with the contents of a file."
+    (let ((*print-pretty* t))
+      (with-open-file (stream file
+			      :direction :input
+			      :if-does-not-exist nil)
+	(do ((form (read stream) (read stream nil 'eof)))
+	    ((eq form 'eof))
+	  (format t "~&MPS> ~S~%~S~%" form (eval form))))))
 
   (defun clear ()
     "Clear the engine"
