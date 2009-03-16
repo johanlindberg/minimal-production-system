@@ -3,11 +3,11 @@
 (defpackage :mps
   (:use :common-lisp)
   (:export :defrule
+
 	   :agenda
 	   :assert-fact
 	   :assert-facts
 	   :batch
-	   :breadth
 	   :clear
 	   :depth
 	   :facts
@@ -62,7 +62,7 @@
     (intern sym)))
 
 (defun variable-p (sym)
-  "Return T if <sym> is a variable (starts with ?) otherwise NIL."
+  "Returns T if <sym> is a variable (starts with ?) otherwise NIL."
   (and (symbolp sym)
        (eq (char (string sym) 0) #\?)))
 
@@ -110,7 +110,7 @@
 
   ;; Public API
   (defun agenda ()
-    "Return the current agenda and the number of activations on it."
+    "Returns the current agenda and the number of activations on it."
     (let ((conflict-set (flatten (get-conflict-set))))
       (values (funcall conflict-resolution-strategy conflict-set)
 	      (length conflict-set))))
@@ -119,7 +119,7 @@
     `(assert-facts ,fact))
 
   (defun assert-facts (&rest facts)
-    "Add <facts> to the working memory and Rete Network.
+    "Adds <facts> to the working memory and Rete Network.
 
      Identical facts (tested with equalp) are not allowed and will not be
      processed. The number of facts asserted is returned."
@@ -146,16 +146,23 @@
   (defun batch (file)
     "Allows batch processing of interactive commands by replacing standard
      input with the contents of a file."
-    (let ((*print-pretty* t))
+    (let ((*print-pretty* t)
+	  (count 0))
       (with-open-file (stream file
 			      :direction :input
 			      :if-does-not-exist nil)
-	(do ((form (read stream) (read stream nil 'eof)))
+	(do ((form (read stream) (progn
+				   (incf count)
+				   (read stream nil 'eof))))
 	    ((eq form 'eof))
-	  (format t "~&MPS> ~S~%~S~%" form (eval form))))))
+	  (format t "~&MPS> ~S~%" form)
+	  (let ((result (multiple-value-list (eval form))))
+	    (format t "~&~{~S~%~}" result))))
+
+      count))
 
   (defun clear ()
-    "Clear the engine"
+    "Clears the engine."
     (clrhash rete-network)
     (clrhash working-memory)
     (setf root-node (setf (gethash 'root rete-network) (make-hash-table)))
@@ -165,7 +172,7 @@
     t)
 
   (defun facts ()
-    "Return all facts in working memory"
+    "Returns all facts in working memory."
     (let ((result '()))
       (maphash #'(lambda (key value)
 		   (when (numberp key)
