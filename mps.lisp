@@ -3,15 +3,12 @@
 (defpackage :mps
   (:use :common-lisp)
   (:export :defrule
-
 	   :agenda
 	   :assert-fact
 	   :assert-facts
 	   :batch
 	   :clear
-	   :depth
 	   :facts
-	   :load
 	   :modify
 	   :reset
 	   :retract-fact
@@ -22,16 +19,12 @@
 (defmacro ppexp (&body body)
   `(pprint (macroexpand-1 ',@body)))
 
-;;; Structures and parameters
 (defstruct activation
-  rule
-  salience token timestamp
-  rhs-func prod-mem)
+  rule salience token timestamp rhs-func prod-mem)
 
 ;;; Debug parameters
 (defparameter generated-code nil)
 (defparameter funcall-generated-code nil)
-
 (declaim (optimize (speed 0)
 		   (space 0)
 		   (debug 3)))
@@ -112,6 +105,7 @@
   (defun agenda ()
     "Returns the current agenda and the number of activations on it."
     (let ((conflict-set (flatten (get-conflict-set))))
+
       (values (funcall conflict-resolution-strategy conflict-set)
 	      (length conflict-set))))
 
@@ -123,7 +117,6 @@
 
      Identical facts (tested with equalp) are not allowed and will not be
      processed. The number of facts asserted is returned."
-
     (let ((count 0))
       (incf timestamp)
       (dolist (fact facts)
@@ -162,7 +155,7 @@
       count))
 
   (defun clear ()
-    "Clears the engine."
+    "Clears the engine. NOTE! clear does NOT remove defstructs."
     (clrhash rete-network)
     (clrhash working-memory)
     (setf root-node (setf (gethash 'root rete-network) (make-hash-table)))
@@ -172,17 +165,18 @@
     t)
 
   (defun facts ()
-    "Returns all facts in working memory."
+    "Returns all facts in Working Memory."
     (let ((result '()))
       (maphash #'(lambda (key value)
 		   (when (numberp key)
 		     (cons value result)))
 	     working-memory)
+
       result))
     
 
   (defun reset ()
-    "Clear the Working Memory and Rete network memory nodes of facts."
+    "Clear the Working Memory and Rete Network memory nodes of facts."
     (clrhash working-memory)
     (mapcar #'(lambda (memory)
 		(setf (gethash memory rete-network) '()))
@@ -194,7 +188,7 @@
     `(retract-facts ,fact))
 
   (defun retract-facts (&rest facts)
-    "Remove <facts> from the Working Memory and Rete network."
+    "Remove <facts> from the Working Memory and Rete Network."
     (let ((count 0))
       (incf timestamp)
       (dolist (fact facts)
@@ -234,7 +228,7 @@
 
   ;; Private API
   (defun add-to-production-nodes (node)
-    "Add <node> to the list of production nodes"
+    "Adds <node> to the list of production nodes."
     (let ((production-memory (make-sym "memory/" node)))
       (when generated-code
 	(print `(add-to-production-nodes :node ,node)))
@@ -243,7 +237,7 @@
 	  (setf (gethash 'production-nodes rete-network) (list production-memory)))))
 
   (defun add-to-root (type node)
-    "Add <node> as a successor to the type-node for <type>"
+    "Adds <node> as a successor to the type-node for <type>."
     (when generated-code
       (print `(add-to-root :type ,type :node ,node)))
     (if (gethash type root-node)
@@ -251,7 +245,7 @@
 	(setf (gethash type root-node) (list node))))
 
   (defun all-memory-nodes ()
-    "Returns a list with the names of all memory nodes in the Rete Network"
+    "Returns a list with the names of all memory nodes in the Rete Network."
     (let ((mem-nodes '()))
       (maphash #'(lambda (key val)
 		   (declare (ignore val))
@@ -261,10 +255,11 @@
 					      (subseq skey 0 7)))
 		       (setf mem-nodes (cons key mem-nodes)))))
 	       rete-network)
+
       mem-nodes))
 
   (defun connect-nodes (from to)
-    "Connect <from> with <to> in the Rete Network"
+    "Connects <from> with <to> in the Rete Network."
     (when generated-code
       (print `(connect-nodes :from ,from :to ,to)))
     (if (gethash from rete-network)
@@ -272,14 +267,14 @@
 	(setf (gethash from rete-network) (list to))))
 
   (defun contents-of (memory)
-    "Get all tokens in <memory>"
+    "Returns all tokens in <memory>."
     (gethash memory rete-network))
 
   (defun get-conflict-set ()
     (mapcar #'contents-of (gethash 'production-nodes rete-network)))
 
   (defun propagate (key token timestamp from)
-    "Propagate <token> to all nodes that are connected to <from>"
+    "Propagates <token> to all nodes that are connected to <from>."
     (when funcall-generated-code
       (print `(propagate :key ,key :token ,token :timestamp ,timestamp :from ,from)))
     (mapcar #'(lambda (node)
@@ -287,13 +282,15 @@
 	    (gethash from rete-network)))
 
   (defun get-fact-with-index (index)
+    "Returns the fact instance with fact-index <index>."
     (gethash index working-memory))
 
   (defun get-fact-index-of (fact)
+    "Returns the fact-index of <fact>."
     (gethash fact working-memory))
 
   (defun store (key token memory)
-    "Add <token> to (if <key> is '+) or remove from (if <key> is '-) <memory>"
+    "Adds <token> to (if <key> is '+) or removes from (if <key> is '-) <memory>."
     (when funcall-generated-code
       (print `(store :key ,key :token ,token :memory ,memory)))
     (if (eq key '+)
