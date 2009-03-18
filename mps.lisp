@@ -2,12 +2,12 @@
 
 (defpackage :mps
   (:use :common-lisp)
-  (:export :defrule
-	   :agenda
+  (:export :agenda
 	   :assert-fact
 	   :assert-facts
 	   :batch
 	   :clear
+	   :defrule
 	   :facts
 	   :modify
 	   :reset
@@ -169,7 +169,7 @@
     (let ((result '()))
       (maphash #'(lambda (key value)
 		   (when (numberp key)
-		     (cons value result)))
+		     (push value result)))
 	     working-memory)
 
       result))
