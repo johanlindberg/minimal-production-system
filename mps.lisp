@@ -3,15 +3,13 @@
 (defpackage :mps
   (:use :common-lisp)
   (:export :agenda
-	   :assert-fact
 	   :assert-facts
 	   :batch
 	   :clear
 	   :defrule
 	   :facts
-	   :modify-fact ; TBD
+	   :modify-facts ; TBD
 	   :reset
-	   :retract-fact
 	   :retract-facts
 	   :run))
 (in-package :mps)
@@ -40,10 +38,6 @@
 (defparameter nodes (make-hash-table))
 
 ;;; Helper methods
-(defun as-keyword (sym)
-  "Returns <sym> as a keyword."
-  (intern (string-upcase sym) :keyword))
-
 (defun make-sym (&rest parts)
   "Makes a symbol of <parts>."
   (let ((sym ""))
@@ -55,15 +49,6 @@
   "Returns T if <sym> is a variable (starts with ?) otherwise NIL."
   (and (symbolp sym)
        (eq (char (string sym) 0) #\?)))
-
-;; Stolen from the Common Lisp Cookbook. See
-;; http://cl-cookbook.sourceforge.net/strings.html
-(defun split (string &optional (delimiter #\SPACE))
-  "Splits <string> into pieces separated by <delimiter>."
-  (loop for i = 0 then (1+ j)
-     as j = (position delimiter string :start i)
-     collect (subseq string i j)
-     while j))
 
 ;; Stolen from On Lisp by Paul Graham.
 (defun flatten (x) 
@@ -105,9 +90,6 @@
 
       (values (funcall conflict-resolution-strategy conflict-set)
 	      (length conflict-set))))
-
-  (defmacro assert-fact (fact)
-    `(assert-facts ,fact))
 
   (defun assert-facts (&rest fact-list)
     "Adds facts in <fact-list> to the working memory and Rete Network.
@@ -172,8 +154,9 @@
 
       result))
     
-  (defun modify-fact (fact &rest slots)
-    (declare (ignore fact slots))
+  (defun modify-facts (&rest slots)
+    "Modifies facts in Working Memory as specified in <slots>."
+    (declare (ignore slots))
     nil)
 
   (defun reset ()
@@ -184,9 +167,6 @@
 	    (all-memory-nodes))
 
     t)
-
-  (defmacro retract-fact (fact)
-    `(retract-facts ,fact))
 
   (defun retract-facts (&rest fact-list)
     "Removes facts in <fact-list> from the Working Memory and Rete Network."
@@ -215,7 +195,7 @@
 	 ((or (eq limit 0)
 	      (= (length curr-agenda) 0)) execution-count)
       (let* ((activation (first curr-agenda)))
-	(format rules "~&FIRE: ~S" (activation-rule activation))
+	(format rules "~&FIRE: ~A ~S" (activation-rule activation) (activation-token activation))
 	(funcall (activation-rhs-func activation) activation)
 	(store '- activation (activation-prod-mem activation)))))
 
