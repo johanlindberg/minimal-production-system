@@ -58,21 +58,16 @@
 		   (t (rec (car x) (rec (cdr x) acc)))))) 
     (rec x nil)))
 
-
-;;; Conflict resolution strategy
-;;; ----------------------------
-(defun order-by-salience (conflict-set)
-  (stable-sort conflict-set #'(lambda (activation1 activation2)
-				(> (activation-salience activation1)
-				   (activation-salience activation2)))))
-		
-(defun depth (conflict-set)
-  "Implementation of the conflict resolution strategy 'depth'"
-  (order-by-salience (stable-sort conflict-set
-				  #'(lambda (activation1 activation2)
-				      (> (activation-timestamp activation1)
-					 (activation-timestamp activation2))))))
-
+(flet ((order-by-salience (conflict-set)
+	 (stable-sort conflict-set #'(lambda (activation1 activation2)
+				       (> (activation-salience activation1)
+					  (activation-salience activation2))))))
+  (defun depth (conflict-set)
+    "Implementation of the conflict resolution strategy 'depth'"
+    (order-by-salience (stable-sort conflict-set
+				    #'(lambda (activation1 activation2)
+					(> (activation-timestamp activation1)
+					   (activation-timestamp activation2)))))))
 
 ;;; Inference engine implementation
 ;;; -------------------------------
@@ -128,7 +123,7 @@
 				   (incf count)
 				   (read stream nil 'eof))))
 	    ((eq form 'eof))
-	  (format t "~&MPS> ~S~%" form)
+	  (format t "~&~A> ~S~%" (package-name *package*) form)
 	  (let ((result (multiple-value-list (eval form))))
 	    (format t "~&~{~S~%~}" result))))
 
@@ -154,10 +149,18 @@
 
       result))
     
-  (defun modify-facts (&rest slots)
+  (defun modify-facts (&rest fact-modifiers)
     "Modifies facts in Working Memory as specified in <slots>."
-    (declare (ignore slots))
-    nil)
+    (dolist (fact-modifier fact-modifiers)
+      (let ((fact (car fact-modifier))
+	    (slot-values (cdr fact-modifier)))
+	(when (numberp fact)
+	  (setf fact (get-fact-with-index fact)))
+	
+	(dolist (slot-value slot-values)
+	  (let ((slot-name (car slot-value))
+		(slot-value (cadr slot-value)))
+	    (print `(setf (,(make-sym (type fact) "-" slot-name) ,fact) ,slot-value)))))))
 
   (defun reset ()
     "Clear the Working Memory and Rete Network memory nodes of facts."
