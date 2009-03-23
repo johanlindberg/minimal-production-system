@@ -75,8 +75,8 @@
        (rete-network (make-hash-table))
        (root-node (setf (gethash 'root rete-network) (make-hash-table)))
        (working-memory (make-hash-table :test #'equalp))
-       (fact-index 0)
-       (timestamp 0))
+       (current-fact-index 0)
+       (current-timestamp 0))
 
   ;; Public API
   (defun agenda ()
@@ -92,21 +92,19 @@
      Identical facts (tested with equalp) are not allowed and will not be
      processed. The number of facts asserted is returned."
     (let ((count 0))
-      (incf timestamp)
+      (incf current-timestamp)
       (dolist (fact fact-list)
-	(when (numberp fact)
-	  (setf fact (get-fact-with-index fact)))
 	(unless (gethash fact working-memory)
-	  (incf fact-index)
-	  (setf (gethash fact working-memory) fact-index)
-	  (setf (gethash fact-index working-memory) fact)
-	  (format facts "~&=> ~D ~S" fact-index fact)
+	  (incf current-fact-index)
+	  (setf (gethash fact working-memory) current-fact-index)
+	  (setf (gethash current-fact-index working-memory) fact)
+	  (format facts "~&=> ~D ~S" current-fact-index fact)
 	  (incf count)
 	  (mapcar #'(lambda (nodes)
 		      (if (consp nodes)
 			  (dolist (node nodes)
-			    (funcall node '+ fact timestamp))
-			  (funcall nodes '+ fact timestamp)))
+			    (funcall node '+ fact current-timestamp))
+			  (funcall nodes '+ fact current-timestamp)))
 		  (gethash (type-of fact) (gethash 'root rete-network)))))
 
       count))
@@ -123,7 +121,9 @@
 				   (incf count)
 				   (read stream nil 'eof))))
 	    ((eq form 'eof))
-	  (format t "~&~A> ~S~%" (package-name *package*) form)
+	  (format t "~&~A> ~S~%" (if (package-nicknames *package*)
+				     (car (package-nicknames *package*))
+				     (package-name *package*)) form)
 	  (let ((result (multiple-value-list (eval form))))
 	    (format t "~&~{~S~%~}" result))))
 
@@ -134,8 +134,8 @@
     (clrhash rete-network)
     (clrhash working-memory)
     (setf root-node (setf (gethash 'root rete-network) (make-hash-table)))
-    (setf fact-index 0)
-    (setf timestamp 0)
+    (setf current-fact-index 0)
+    (setf current-timestamp 0)
 
     t)
 
@@ -149,18 +149,26 @@
 
       result))
     
-  (defun modify-facts (&rest fact-modifiers)
-    "Modifies facts in Working Memory as specified in <slots>."
-    (dolist (fact-modifier fact-modifiers)
-      (let ((fact (car fact-modifier))
-	    (slot-values (cdr fact-modifier)))
-	(when (numberp fact)
-	  (setf fact (get-fact-with-index fact)))
-	
-	(dolist (slot-value slot-values)
-	  (let ((slot-name (car slot-value))
-		(slot-value (cadr slot-value)))
-	    (print `(setf (,(make-sym (type fact) "-" slot-name) ,fact) ,slot-value)))))))
+  (defmacro modify-facts (fact-modifiers)
+    "Modifies facts in Working Memory as specified in <fact-modifiers>."
+    (let ((fact-bindings '())
+	  (modify-forms '()))
+      (dolist (fact-modifier fact-modifiers)
+	(let ((fact (car fact-modifier))
+	      (fact-binding (gensym))
+	      (slot-values (cdr fact-modifier)))
+	  (when (numberp fact)
+	    (setf fact (get-fact-with-index fact)))
+	  
+	  (push `(,fact-binding ,fact) fact-bindings)
+	  (dolist (slot-value slot-values)
+	    (let ((slot-name (car slot-value))
+		  (slot-value (cadr slot-value)))
+	      (push `(setf (,(make-sym (type-of fact) "-" slot-name) ,fact-binding) ,slot-value) modify-forms)))))
+      `(let (,@fact-bindings)
+	 (retract-facts ,@(mapcar #'car fact-bindings))
+	 ,@modify-forms
+	 (assert-facts ,@(mapcar #'car fact-bindings)))))
 
   (defun reset ()
     "Clear the Working Memory and Rete Network memory nodes of facts."
@@ -174,19 +182,19 @@
   (defun retract-facts (&rest fact-list)
     "Removes facts in <fact-list> from the Working Memory and Rete Network."
     (let ((count 0))
-      (incf timestamp)
+      (incf current-timestamp)
       (dolist (fact fact-list)
 	(when (numberp fact)
 	  (setf fact (get-fact-with-index fact)))
 	(when (gethash fact working-memory)
-	  (setf fact-index (get-fact-index-of fact))
-	  (remhash fact-index working-memory)
-	  (remhash fact working-memory)
-	  (format facts "~&<= ~D ~S" fact-index fact)
-	  (incf count)
-	  (mapcar #'(lambda (node)
-		      (funcall node '- fact timestamp))
-		  (gethash (type-of fact) (gethash 'root rete-network)))))
+	  (let ((fact-index (get-fact-index-of fact)))
+	    (remhash fact-index working-memory)
+	    (remhash fact working-memory)
+	    (format facts "~&<= ~D ~S" fact-index fact)
+	    (incf count)
+	    (mapcar #'(lambda (node)
+			(funcall node '- fact current-timestamp))
+		    (gethash (type-of fact) (gethash 'root rete-network))))))
 
       count))
 
