@@ -311,11 +311,8 @@
 							     (equalp item token))
 							 (gethash memory rete-network)))))))
 
-;;; defrule
 (defmacro defrule (name &body body)
-  "Rules are defined using the defrule construct.
-
-   Syntax:
+  "BNF:
    <defrule-construct>
      ::= (defrule <rulename>
            <conditional-element>*
@@ -323,18 +320,22 @@
            <expression>*)
 
    <conditional-element>
-     ::= <template-pattern-CE> | <assigned-pattern-CE> |  
-         <not-CE> | <test-CE> | <exists-CE>
+     ::= <template-pattern-CE> |
+         <assigned-pattern-CE> |  
+         <not-CE> |
+         <test-CE> |
+         <exists-CE>
 
    <template-pattern-CE> ::= (<defstruct-name> <single-field-LHS-slot>*)
    <assigned-pattern-CE> ::= <single-field-variable> <- <template-pattern-CE>
 
    <not-CE>              ::= (not <conditional-element>)  
-   <test-CE>             ::= (test <function-call>) 
+   <test-CE>             ::= (test <expression>) 
    <exists-CE>           ::= (exists <conditional-element>+) 
 
    <single-field-LHS-slot>
-     ::= (<slot-name> [<single-field-variable>] <constraint>)
+     ::= (<slot-name> <single-field-variable>) |
+         (<slot-name> [<single-field-variable>] <constraint>)
   "
   (let ((rhs (if (cdr (member '=> body))
 		 (cdr (member '=> body))
@@ -559,7 +560,7 @@
 	  (progn
 	    (dolist (b binding)
 	      ;; If this position already has a binding for this variable we'll
-	      ;; return a alpha-constraint
+	      ;; return an alpha-constraint
 	      (when (equal position (caddr b))
 		(return `(equal (,(car b) fact) (,slot-accessor fact)))))
 
