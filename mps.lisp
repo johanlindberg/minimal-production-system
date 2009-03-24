@@ -8,7 +8,7 @@
 	   :clear
 	   :defrule
 	   :facts
-	   :modify-facts ; TBD
+	   :modify-facts
 	   :reset
 	   :retract-facts
 	   :run))
@@ -51,26 +51,26 @@
        (eq (char (string sym) 0) #\?)))
 
 ;; Stolen from On Lisp by Paul Graham.
-(defun flatten (x) 
-  (labels ((rec (x acc) 
-	     (cond ((null x) acc) 
-		   ((atom x) (cons x acc)) 
-		   (t (rec (car x) (rec (cdr x) acc)))))) 
-    (rec x nil)))
+(defun flatten (lst)
+  "Returns a flattened version of <lst>."
+  (labels ((rec (lst acc) 
+	     (cond ((null lst) acc) 
+		   ((atom lst) (cons lst acc)) 
+		   (t (rec (car lst) (rec (cdr lst) acc)))))) 
+    (rec lst nil)))
 
+;;; Conflict resolution strategies (depth)
 (flet ((order-by-salience (conflict-set)
 	 (stable-sort conflict-set #'(lambda (activation1 activation2)
 				       (> (activation-salience activation1)
 					  (activation-salience activation2))))))
   (defun depth (conflict-set)
-    "Implementation of the conflict resolution strategy 'depth'"
+    "Sorts (according to salience and timestamp) and returns <conflict-set>."
     (order-by-salience (stable-sort conflict-set
 				    #'(lambda (activation1 activation2)
 					(> (activation-timestamp activation1)
 					   (activation-timestamp activation2)))))))
 
-;;; Inference engine implementation
-;;; -------------------------------
 (let* ((conflict-resolution-strategy #'depth)
        (rete-network (make-hash-table))
        (root-node (setf (gethash 'root rete-network) (make-hash-table)))
@@ -90,7 +90,7 @@
     "Adds facts in <fact-list> to the working memory and Rete Network.
 
      Identical facts (tested with equalp) are not allowed and will not be
-     processed. The number of facts asserted is returned."
+     processed. Returns the number of facts asserted."
     (let ((count 0))
       (incf current-timestamp)
       (dolist (fact fact-list)
@@ -110,8 +110,7 @@
       count))
 
   (defun batch (file)
-    "Allows batch processing of interactive commands by replacing standard
-     input with the contents of a file."
+    "Evaluates the contents of <file> as a series commands."
     (let ((*print-pretty* t)
 	  (count 0))
       (with-open-file (stream file
@@ -133,6 +132,7 @@
     "Clears the engine. NOTE! clear does NOT remove defstructs."
     (clrhash rete-network)
     (clrhash working-memory)
+
     (setf root-node (setf (gethash 'root rete-network) (make-hash-table)))
     (setf current-fact-index 0)
     (setf current-timestamp 0)
@@ -171,7 +171,7 @@
 	 (assert-facts ,@(mapcar #'car fact-bindings)))))
 
   (defun reset ()
-    "Clear the Working Memory and Rete Network memory nodes of facts."
+    "Clears the Working Memory and Rete Network memory nodes of facts."
     (clrhash working-memory)
     (mapcar #'(lambda (memory)
 		(setf (gethash memory rete-network) '()))
@@ -257,14 +257,15 @@
 	(setf (gethash from rete-network) (list to))))
 
   (defun contents-of (memory)
-    "Returns all tokens in <memory>."
+    "Returns the contents of <memory>."
     (gethash memory rete-network))
 
   (defun get-conflict-set ()
+    "Returns the conflict-set."
     (mapcar #'contents-of (gethash 'production-nodes rete-network)))
 
   (defun propagate (key token timestamp from)
-    "Propagates <token> to all nodes that are connected to <from>."
+    "Propagates <token> (with <key> and <timestamp>) to all nodes that are connected to <from>."
     (format trace-generated-code "~&(PROPAGATE :KEY ~S :TOKEN ~S :TIMESTAMP ~S :FROM ~S)~%" key token timestamp from)
     (mapcar #'(lambda (node)
 		(funcall node key token timestamp))
@@ -454,6 +455,30 @@
       (connect-nodes left-node left-activate))
     (setf (gethash position nodes) beta-node-name)))
 
+(defun make-test-node (rule-name test-form position)
+  (let ((test-node-name (make-sym "TEST/" rule-name "-" (format nil "~A" position)))
+	(list-of-fact-bindings '())
+	(list-of-variable-bindings '()))
+    (maphash #'(lambda (key value)
+		 (push (make-fact-binding key value) list-of-fact-bindings))
+	     fact-bindings)
+    (maphash #'(lambda (key value)
+		 (push (make-variable-binding key value) list-of-variable-bindings))
+	     variable-bindings)
+
+    (let ((test-node
+	   `(defun ,test-node-name (key token timestamp)
+	      (format trace-generated-code "~&(~A :KEY ~S :TOKEN ~S :TIMESTAMP ~S)~%" ',test-node-name key token timestamp)
+	      (let* (,@list-of-fact-bindings
+		     ,@list-of-variable-bindings)
+		(when ,test-form
+		  (store key token ',(make-sym "MEMORY/" test-node-name))
+		  (propagate key token timestamp ',test-node-name))))))
+      (let ((*print-pretty* t))
+	(format print-generated-code "~&~S~%" test-node))
+      (eval test-node))
+    test-node-name))
+
 (defun make-binding-test (position)
   (let ((result '(t))) ; zero join
     (maphash #'(lambda (k v)
@@ -488,30 +513,6 @@
     (eval production-node)
     (connect-nodes (gethash (- (hash-table-count nodes) 1) nodes) production-node-name)
     (add-to-production-nodes production-node-name)))
-
-(defun make-test-node (rule-name test-form position)
-  (let ((test-node-name (make-sym "TEST/" rule-name "-" (format nil "~A" position)))
-	(list-of-fact-bindings '())
-	(list-of-variable-bindings '()))
-    (maphash #'(lambda (key value)
-		 (push (make-fact-binding key value) list-of-fact-bindings))
-	     fact-bindings)
-    (maphash #'(lambda (key value)
-		 (push (make-variable-binding key value) list-of-variable-bindings))
-	     variable-bindings)
-
-    (let ((test-node
-	   `(defun ,test-node-name (key token timestamp)
-	      (format trace-generated-code "~&(~A :KEY ~S :TOKEN ~S :TIMESTAMP ~S)~%" ',test-node-name key token timestamp)
-	      (let* (,@list-of-fact-bindings
-		     ,@list-of-variable-bindings)
-		(when ,test-form
-		  (store key token ',(make-sym "MEMORY/" test-node-name))
-		  (propagate key token timestamp ',test-node-name))))))
-      (let ((*print-pretty* t))
-	(format print-generated-code "~&~S~%" test-node))
-      (eval test-node))
-    test-node-name))
 
 (defun make-node-with-literal-constraint (rule-name defstruct-name slot-name slot-constraint position)
   (let ((node-name (make-sym "ALPHA/" rule-name "-" (format nil "~A" position) "/" defstruct-name "-" slot-name)))
