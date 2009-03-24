@@ -358,12 +358,12 @@
   `(print (list 'not ,rule-name ,position ,conditional-elements)))
 
 (defmacro parse-test-ce (rule-name position conditional-element)
-  `(let ((test-node '())
-	 (beta-node '()))
-     (setf test-node (make-test-node ',rule-name ',(cadr conditional-element) ,position))
-     (setf (gethash ,position nodes) test-node)
-     (setf beta-node (make-beta-node ',rule-name ,position))
-     (connect-nodes test-node (make-sym beta-node "-right"))))
+  (if (eq position 0)
+      (format t "A Test-CE cannot appear FIRST in a rule!")
+      `(let ((left-node (gethash ,(- position 1) nodes))
+	     (test-node (make-test-node ',rule-name ',(cadr conditional-element) ,position)))
+	 (setf (gethash ,position nodes) test-node)
+	 (connect-nodes left-node test-node))))
 
 (defmacro parse-pattern-ce (rule-name position variable conditional-element)
   (let ((defstruct-name (car conditional-element)))
@@ -481,13 +481,13 @@
 	     variable-bindings)
 
     (let ((test-node
-	   `(defun ,test-node-name (key fact timestamp)
-	      (format trace-generated-code "~&(~A :KEY ~S :FACT ~S :TIMESTAMP ~S)" ',test-node-name key fact timestamp)
-	      (let* ((token (activation-token activation))
-		     ,@list-of-fact-bindings
+	   `(defun ,test-node-name (key token timestamp)
+	      (format trace-generated-code "~&(~A :KEY ~S :TOKEN ~S :TIMESTAMP ~S)" ',test-node-name key token timestamp)
+	      (let* (,@list-of-fact-bindings
 		     ,@list-of-variable-bindings)
 		(when ,test-form
-		  (propagate key fact timestamp ',test-node-name))))))
+		  (store key token ',(make-sym "MEMORY/" test-node-name))
+		  (propagate key token timestamp ',test-node-name))))))
       (let ((*print-pretty* t))
 	(format print-generated-code "~&~S" test-node))
       (eval test-node))
