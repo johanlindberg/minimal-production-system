@@ -357,9 +357,13 @@
   ; TBD
   `(print (list 'not ,rule-name ,position ,conditional-elements)))
 
-(defmacro parse-test-ce (rule-name position variable conditional-element)
-  ; TBD
-  `(print (list 'test ,rule-name ,position ,variable ,conditional-element)))
+(defmacro parse-test-ce (rule-name position conditional-element)
+  `(let ((test-node '())
+	 (beta-node '()))
+     (setf test-node (make-test-node ',rule-name ',(cadr conditional-element) ,position))
+     (setf (gethash ,position nodes) test-node)
+     (setf beta-node (make-beta-node ',rule-name ,position))
+     (connect-nodes test-node (make-sym beta-node "-right"))))
 
 (defmacro parse-pattern-ce (rule-name position variable conditional-element)
   (let ((defstruct-name (car conditional-element)))
@@ -464,6 +468,30 @@
     (eval production-node)
     (connect-nodes (gethash (- (hash-table-count nodes) 1) nodes) production-node-name)
     (add-to-production-nodes production-node-name)))
+
+(defun make-test-node (rule-name test-form position)
+  (let ((test-node-name (make-sym "TEST/" rule-name "-" (format nil "~A" position)))
+	(list-of-fact-bindings '())
+	(list-of-variable-bindings '()))
+    (maphash #'(lambda (key value)
+		 (push (make-fact-binding key value) list-of-fact-bindings))
+	     fact-bindings)
+    (maphash #'(lambda (key value)
+		 (push (make-variable-binding key value) list-of-variable-bindings))
+	     variable-bindings)
+
+    (let ((test-node
+	   `(defun ,test-node-name (key fact timestamp)
+	      (format trace-generated-code "~&(~A :KEY ~S :FACT ~S :TIMESTAMP ~S)" ',test-node-name key fact timestamp)
+	      (let* ((token (activation-token activation))
+		     ,@list-of-fact-bindings
+		     ,@list-of-variable-bindings)
+		(when ,test-form
+		  (propagate key fact timestamp ',test-node-name))))))
+      (let ((*print-pretty* t))
+	(format print-generated-code "~&~S" test-node))
+      (eval test-node))
+    test-node-name))
 
 (defun make-node-with-literal-constraint (rule-name defstruct-name slot-name slot-constraint position)
   (let ((node-name (make-sym "ALPHA/" rule-name "-" (format nil "~A" position) "/" defstruct-name "-" slot-name)))
