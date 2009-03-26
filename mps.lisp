@@ -149,7 +149,7 @@
 
       result))
     
-  (defmacro modify-facts (fact-modifiers)
+  (defmacro modify-facts (&rest fact-modifiers)
     "Modifies facts in Working Memory as specified in <fact-modifiers>."
     (let ((fact-bindings '())
 	  (modify-forms '()))
