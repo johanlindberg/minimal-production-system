@@ -361,7 +361,7 @@
 	      (parse ,rule-name ,(+ position 1) ,@(cdr conditional-elements))))
 	  ((variable-p (car conditional-elements))
 	   (progn
-	     (cl:assert (eq (cadr conditional-elements) '<-))
+	     (assert (eq (cadr conditional-elements) '<-))
 	     `(progn
 		(parse-pattern-ce ,rule-name ,position ,(car conditional-elements) ,(caddr conditional-elements))
 		(parse ,rule-name ,(+ position 1) ,@(cdddr conditional-elements))))))))
@@ -374,12 +374,16 @@
       (otherwise `(parse-pattern-ce ,rule-name ,position nil ,conditional-element)))))
 
 (defmacro parse-not-ce (rule-name position &rest conditional-elements)
-  ; TBD
-  `(print (list 'not ,rule-name ,position ,conditional-elements)))
+  (if (eq position 0)
+      (format t "A Not-CE cannot appear FIRST in a rule!") ; TBD! Raise exception!?
+      `(let ((left-node (gethash ,(- position 1) nodes))
+	     (not-node (make-not-node ',rule-name ',conditional-elements ,position)))
+	 (setf (gethash ,position nodes) not-node)
+	 (connect-nodes left-node not-node))))
 
 (defmacro parse-test-ce (rule-name position conditional-element)
   (if (eq position 0)
-      (format t "A Test-CE cannot appear FIRST in a rule!") ; TBD! Raise exception
+      (format t "A Test-CE cannot appear FIRST in a rule!") ; TBD! Raise exception!?
       `(let ((left-node (gethash ,(- position 1) nodes))
 	     (test-node (make-test-node ',rule-name ',(cadr conditional-element) ,position)))
 	 (setf (gethash ,position nodes) test-node)
@@ -392,7 +396,7 @@
        (unless ,(null variable)
 	 (setf (gethash ',variable fact-bindings) ,position))
        (setf alpha-node (make-alpha-nodes ',rule-name ',defstruct-name ',conditional-element ',variable ,position))
-       (setf (gethash ,position nodes) alpha-node)
+       (setf (gethash ,position nodes) alpha-node) ; Should this be done differently!?
        (setf beta-node (make-beta-node ',rule-name ,position))
        (connect-nodes alpha-node (make-sym beta-node "-right")))))
 
@@ -456,8 +460,37 @@
       (connect-nodes left-node left-activate))
     (setf (gethash position nodes) beta-node-name)))
 
+;; TBD!
+(defun make-not-node (rule-name position)
+  (let* ((left-node (gethash (- position 1) nodes))
+	 (right-node (gethash position nodes))
+	 (not-node-name (make-sym "NOT/" rule-name "-" (format nil "~D" position)))
+	 (left-activate (make-sym not-node-name "-LEFT"))
+	 (right-activate (make-sym not-node-name "-RIGHT"))
+	 (not-node `(let ((left-memory  ',(make-sym "MEMORY/" left-node))
+			  (right-memory ',(make-sym "MEMORY/" right-node)))
+		      (defun ,left-activate (key token timestamp)
+			(format trace-generated-code "~&(~A :KEY ~S :TOKEN ~S :TIMESTAMP ~S)~%" ',left-activate key token timestamp)
+			(dolist (fact (contents-of right-memory))
+			  (let ((tok (append token (list fact))))
+			    (when (and ,@(make-binding-test position))
+			      (store key tok ',(make-sym "MEMORY/" not-node-name))
+			      (propagate key tok timestamp ',not-node-name)))))
+		      (defun ,right-activate (key fact timestamp)
+			(format trace-generated-code "~&(~A :KEY ~S :FACT ~S :TIMESTAMP ~S)~%" ',right-activate key fact timestamp)
+			(dolist (token (contents-of left-memory))
+			  (let ((tok (append token (list fact))))
+			    (when (and ,@(make-binding-test position))
+			      (store key tok ',(make-sym "MEMORY/" not-node-name))
+			      (propagate key tok timestamp ',not-node-name))))))))
+    (let ((*print-pretty* t))
+      (format print-generated-code "~&~S~%" not-node))
+    (eval not-node)
+    (connect-nodes left-node left-activate)
+    (setf (gethash position nodes) not-node-name)))
+
 (defun make-test-node (rule-name test-form position)
-  (let ((test-node-name (make-sym "TEST/" rule-name "-" (format nil "~A" position)))
+  (let ((test-node-name (make-sym "TEST/" rule-name "-" (format nil "~D" position)))
 	(list-of-fact-bindings '())
 	(list-of-variable-bindings '()))
     (maphash #'(lambda (key value)
