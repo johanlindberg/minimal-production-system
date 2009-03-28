@@ -295,7 +295,13 @@
 			       (and (equalp (activation-rule item) (activation-rule activation))
 				    (equalp (activation-token item) (activation-token activation))))
 			   (gethash memory rete-network))))))
-  
+
+  (defun update-count (key count-memory)
+    (format trace-generated-code "~&(UPDATE-COUNT :KEY ~S :COUNT-MEMORY ~S)~%" key count-memory)
+    (if (eq key '+)
+	(incf (gethash count-memory rete-network 0))
+	(decf (gethash count-memory rete-network 0))))
+
   (defun store (key token memory)
     "Adds <token> to (if <key> is '+) or removes from (if <key> is '-) <memory>."
     (format trace-generated-code "~&(STORE :KEY ~S :TOKEN ~S :MEMORY ~S)~%" key token memory)
@@ -312,31 +318,6 @@
 							 (gethash memory rete-network)))))))
 
 (defmacro defrule (name &body body)
-  "BNF:
-   <defrule-construct>
-     ::= (defrule <rulename>
-           <conditional-element>*
-           =>
-           <expression>*)
-
-   <conditional-element>
-     ::= <template-pattern-CE> |
-         <assigned-pattern-CE> |  
-         <not-CE> |
-         <test-CE> |
-         <exists-CE>
-
-   <template-pattern-CE> ::= (<defstruct-name> <single-field-LHS-slot>*)
-   <assigned-pattern-CE> ::= <single-field-variable> <- <template-pattern-CE>
-
-   <not-CE>              ::= (not <conditional-element>)  
-   <test-CE>             ::= (test <expression>) 
-   <exists-CE>           ::= (exists <conditional-element>+) 
-
-   <single-field-LHS-slot>
-     ::= (<slot-name> <single-field-variable>) |
-         (<slot-name> [<single-field-variable>] <constraint>)
-  "
   (let ((rhs (if (cdr (member '=> body))
 		 (cdr (member '=> body))
 		 `(t)))
@@ -373,13 +354,15 @@
       (test `(parse-test-ce ,rule-name ,position ,conditional-element))
       (otherwise `(parse-pattern-ce ,rule-name ,position nil ,conditional-element)))))
 
-(defmacro parse-not-ce (rule-name position &rest conditional-elements)
-  (if (eq position 0)
-      (format t "A Not-CE cannot appear FIRST in a rule!") ; TBD! Raise exception!?
-      `(let ((left-node (gethash ,(- position 1) nodes))
-	     (not-node (make-not-node ',rule-name ',conditional-elements ,position)))
-	 (setf (gethash ,position nodes) not-node)
-	 (connect-nodes left-node not-node))))
+(defmacro parse-not-ce (rule-name position conditional-element)
+  (if (> (length (cdr conditional-element)) 1)
+      (format t "A Not-CE cannot contain more than one Pattern-CE!") ; TBD!
+      `(let* ((alpha-node '())
+	      (not-node '()))
+	 (setf alpha-node (make-alpha-nodes ',rule-name ',(caadr conditional-element) ',(cadr conditional-element) nil ,position))
+	 (setf (gethash ,position nodes) alpha-node) ; TBD! This should be done differently!?
+	 (setf not-node (make-single-not-node ',rule-name ,position))
+	 (connect-nodes alpha-node (make-sym not-node "-right")))))
 
 (defmacro parse-test-ce (rule-name position conditional-element)
   (if (eq position 0)
@@ -396,7 +379,7 @@
        (unless ,(null variable)
 	 (setf (gethash ',variable fact-bindings) ,position))
        (setf alpha-node (make-alpha-nodes ',rule-name ',defstruct-name ',conditional-element ',variable ,position))
-       (setf (gethash ,position nodes) alpha-node) ; Should this be done differently!?
+       (setf (gethash ,position nodes) alpha-node) ; TBD! This should be done differently!?
        (setf beta-node (make-beta-node ',rule-name ,position))
        (connect-nodes alpha-node (make-sym beta-node "-right")))))
 
@@ -460,33 +443,47 @@
       (connect-nodes left-node left-activate))
     (setf (gethash position nodes) beta-node-name)))
 
-;; TBD!
-(defun make-not-node (rule-name position)
-  (let* ((left-node (gethash (- position 1) nodes))
+(defun make-single-not-node (rule-name position)
+  (let* ((left-node (unless (eq position 0)
+		      (gethash (- position 1) nodes)))
 	 (right-node (gethash position nodes))
 	 (not-node-name (make-sym "NOT/" rule-name "-" (format nil "~D" position)))
 	 (left-activate (make-sym not-node-name "-LEFT"))
 	 (right-activate (make-sym not-node-name "-RIGHT"))
-	 (not-node `(let ((left-memory  ',(make-sym "MEMORY/" left-node))
-			  (right-memory ',(make-sym "MEMORY/" right-node)))
-		      (defun ,left-activate (key token timestamp)
-			(format trace-generated-code "~&(~A :KEY ~S :TOKEN ~S :TIMESTAMP ~S)~%" ',left-activate key token timestamp)
-			(dolist (fact (contents-of right-memory))
-			  (let ((tok (append token (list fact))))
-			    (when (and ,@(make-binding-test position))
-			      (store key tok ',(make-sym "MEMORY/" not-node-name))
-			      (propagate key tok timestamp ',not-node-name)))))
-		      (defun ,right-activate (key fact timestamp)
-			(format trace-generated-code "~&(~A :KEY ~S :FACT ~S :TIMESTAMP ~S)~%" ',right-activate key fact timestamp)
-			(dolist (token (contents-of left-memory))
-			  (let ((tok (append token (list fact))))
-			    (when (and ,@(make-binding-test position))
-			      (store key tok ',(make-sym "MEMORY/" not-node-name))
-			      (propagate key tok timestamp ',not-node-name))))))))
+	 (not-node (if left-node
+		       `(let ((left-memory ',(make-sym "MEMORY/" left-node))
+			      (right-memory ',(make-sym "MEMORY/" right-node)))
+			  (defun ,left-activate (key token timestamp)
+			    (format trace-generated-code "~&(~A :KEY ~S :TOKEN ~S :TIMESTAMP ~S)~%" ',left-activate key token timestamp)
+			    (dolist (fact (contents-of right-memory))
+			      (let ((tok (append token (list fact))))
+				(when (and ,@(make-binding-test position))
+				  (store key tok ',(make-sym "MEMORY/" not-node-name))
+				  (propagate key tok timestamp ',not-node-name)))))
+			  (defun ,right-activate (key fact timestamp)
+			    (format trace-generated-code "~&(~A :KEY ~S :FACT ~S :TIMESTAMP ~S)~%" ',right-activate key fact timestamp)
+			    (dolist (token (contents-of left-memory))
+			      (let ((tok (append token (list fact))))
+				(when (and ,@(make-binding-test position))
+				  (let ((count (update-count key ',(make-sym "COUNT-MEMORY/" not-node-name))))
+				    (cond ((and (eq count 0)
+						(eq key '-))
+					   (store '+ tok ',(make-sym "MEMORY/" not-node-name))
+					   (propagate '+ tok timestamp ',not-node-name))
+					  ((and (eq count 1)
+						(eq key '+))
+					   (store '- tok ',(make-sym "MEMORY/" not-node-name))
+					   (propagate '- tok timestamp ',not-node-name)))))))))
+		       ;; Left-input adapter
+		       `(defun ,right-activate (key fact timestamp)
+			  (format trace-generated-code "~&(~A :KEY ~S :FACT ~S :TIMESTAMP ~S)~%" ',right-activate key fact timestamp)
+			  (store key (list fact) ',(make-sym "MEMORY/" not-node-name))
+			  (propagate key (list fact) timestamp ',not-node-name)))))
     (let ((*print-pretty* t))
       (format print-generated-code "~&~S~%" not-node))
     (eval not-node)
-    (connect-nodes left-node left-activate)
+    (unless (eq position 0)
+      (connect-nodes left-node left-activate))
     (setf (gethash position nodes) not-node-name)))
 
 (defun make-test-node (rule-name test-form position)
