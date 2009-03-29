@@ -36,6 +36,7 @@
 (defparameter fact-bindings (make-hash-table))
 (defparameter ce-bindings (make-hash-table))
 (defparameter nodes (make-hash-table))
+(defparameter salience 0)
 
 ;;; Helper methods
 (defun make-sym (&rest parts)
@@ -297,6 +298,7 @@
 			   (gethash memory rete-network))))))
 
   (defun update-count (key count-memory)
+    "Increments (if <key> is '+) or decrements (if <key> is '-) <count-memory>."
     (format trace-generated-code "~&(UPDATE-COUNT :KEY ~S :COUNT-MEMORY ~S)~%" key count-memory)
     (let ((old-count (gethash count-memory rete-network))
 	  (new-count (if (eq key '+)
@@ -339,9 +341,13 @@
 (defmacro parse (rule-name position &rest conditional-elements)
   (unless (eq (car conditional-elements) 'nil)
     (cond ((consp (car conditional-elements))
-	   `(progn
-	      (parse-ce ,rule-name ,position ,(car conditional-elements))
-	      (parse ,rule-name ,(+ position 1) ,@(cdr conditional-elements))))
+	   (if (equal 'salience (caar conditional-elements))
+	       `(progn
+		  (setf salience ,(cadar conditional-elements))
+		  (parse ,rule-name ,position ,@(cdr conditional-elements)))
+	       `(progn
+		  (parse-ce ,rule-name ,position ,(car conditional-elements))
+		  (parse ,rule-name ,(+ position 1) ,@(cdr conditional-elements)))))
 	  ((variable-p (car conditional-elements))
 	   (progn
 	     (assert (eq (cadr conditional-elements) '<-))
@@ -540,7 +546,7 @@
 				 (format activations "~&=> ACTIVATION: ~A ~S~%" ',rule-name token)
 				 (format activations "~&<= ACTIVATION: ~A ~S~%" ',rule-name token))
 			     (store-activation key (make-activation :rule ',rule-name
-								    :salience 0
+								    :salience ,salience
 								    :token token
 								    :timestamp timestamp
 								    :rhs-func #',(make-sym "RHS/" rule-name)
