@@ -330,30 +330,27 @@
        (let ((fact-bindings (make-hash-table))
 	     (ce-bindings (make-hash-table))
 	     (variable-bindings (make-hash-table)))
-	 (compile-lhs ,name ,@lhs)
+	 (compile-lhs ,name 0 ,@lhs)
 	 (compile-rhs ',name ',@rhs)
 	 (make-production-node ',name))
        ',name)))
 
-(defmacro compile-lhs (rule-name &rest lhs)
-  `(parse ,rule-name 0 ,@lhs))
-
-(defmacro parse (rule-name position &rest conditional-elements)
+(defmacro compile-lhs (rule-name position &rest conditional-elements)
   (unless (eq (car conditional-elements) 'nil)
     (cond ((consp (car conditional-elements))
 	   (if (equal 'salience (caar conditional-elements))
 	       `(progn
 		  (setf salience ,(cadar conditional-elements))
-		  (parse ,rule-name ,position ,@(cdr conditional-elements)))
+		  (compile-lhs ,rule-name ,position ,@(cdr conditional-elements)))
 	       `(progn
 		  (parse-ce ,rule-name ,position ,(car conditional-elements))
-		  (parse ,rule-name ,(+ position 1) ,@(cdr conditional-elements)))))
+		  (compile-lhs ,rule-name ,(+ position 1) ,@(cdr conditional-elements)))))
 	  ((variable-p (car conditional-elements))
 	   (progn
 	     (assert (eq (cadr conditional-elements) '<-))
 	     `(progn
 		(parse-pattern-ce ,rule-name ,position ,(car conditional-elements) ,(caddr conditional-elements))
-		(parse ,rule-name ,(+ position 1) ,@(cdddr conditional-elements))))))))
+		(compile-lhs ,rule-name ,(+ position 1) ,@(cdddr conditional-elements))))))))
 
 (defmacro parse-ce (rule-name position conditional-element)
   (let ((ce-type (car conditional-element)))
@@ -618,7 +615,7 @@
 
 (defun expand-variables (form)
   (maphash #'(lambda (key value)
-	       (nsubst `(,(car value) fact) key form))
+	       (nsubst `(,(caar value) fact) key form))
 	   variable-bindings)
   form)
 
