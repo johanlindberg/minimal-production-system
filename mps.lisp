@@ -18,8 +18,8 @@
   rule salience token timestamp rhs-func prod-mem)
 
 ;;; Debug parameters
-(defparameter print-generated-code nil)
-(defparameter trace-generated-code nil)
+(defparameter *print-generated-code* nil)
+(defparameter *trace-generated-code* nil)
 (declaim (optimize (speed 0)
 		   (space 0)
 		   (debug 3)))
@@ -32,11 +32,11 @@
 (defparameter statistics nil) ; TBD
 
 ;;; Compilation globals
-(defparameter variable-bindings (make-hash-table))
-(defparameter fact-bindings (make-hash-table))
-(defparameter ce-bindings (make-hash-table))
-(defparameter nodes (make-hash-table))
-(defparameter salience 0)
+(defparameter *variable-bindings* (make-hash-table))
+(defparameter *fact-bindings* (make-hash-table))
+(defparameter *ce-bindings* (make-hash-table))
+(defparameter *nodes* (make-hash-table))
+(defparameter *salience* 0)
 
 ;;; Helper methods
 (defun make-sym (&rest parts)
@@ -224,14 +224,14 @@
   (defun add-to-production-nodes (node)
     "Adds <node> to the list of production nodes."
     (let ((production-memory (make-sym "MEMORY/" node)))
-      (format print-generated-code "~&(ADD-TO-PRODUCTION-NODES :NODE ~S)~%" node)
+      (format *print-generated-code* "~&(ADD-TO-PRODUCTION-NODES :NODE ~S)~%" node)
       (if (gethash 'production-nodes rete-network)
 	  (push production-memory (gethash 'production-nodes rete-network))
 	  (setf (gethash 'production-nodes rete-network) (list production-memory)))))
 
   (defun add-to-root (type node)
     "Adds <node> as a successor to the type-node for <type>."
-    (format print-generated-code "~&(ADD-TO-ROOT :TYPE ~S :NODE ~S)~%" type node)
+    (format *print-generated-code* "~&(ADD-TO-ROOT :TYPE ~S :NODE ~S)~%" type node)
     (if (gethash type root-node)
 	(push node (gethash type root-node))
 	(setf (gethash type root-node) (list node))))
@@ -252,7 +252,7 @@
 
   (defun connect-nodes (from to)
     "Connects <from> with <to> in the Rete Network."
-    (format print-generated-code "~&(CONNECT-NODES :FROM ~S :TO ~S)~%" from to)
+    (format *print-generated-code* "~&(CONNECT-NODES :FROM ~S :TO ~S)~%" from to)
     (if (gethash from rete-network)
 	(push to (gethash from rete-network))
 	(setf (gethash from rete-network) (list to))))
@@ -267,7 +267,7 @@
 
   (defun propagate (key token timestamp from)
     "Propagates <token> (with <key> and <timestamp>) to all nodes that are connected to <from>."
-    (format trace-generated-code "~&(PROPAGATE :KEY ~S :TOKEN ~S :TIMESTAMP ~S :FROM ~S)~%" key token timestamp from)
+    (format *trace-generated-code* "~&(PROPAGATE :KEY ~S :TOKEN ~S :TIMESTAMP ~S :FROM ~S)~%" key token timestamp from)
     (mapcar #'(lambda (node)
 		(funcall node key token timestamp))
 	    (gethash from rete-network)))
@@ -282,7 +282,7 @@
 
   (defun store-activation (key activation memory)
     "Adds <activation> to (if <key> is '+) or removes from (if <key> is '-) <memory>."
-    (format trace-generated-code "~&(STORE-ACTIVATION :KEY ~S :ACTIVATION ~S :MEMORY ~S)~%" key activation memory)
+    (format *trace-generated-code* "~&(STORE-ACTIVATION :KEY ~S :ACTIVATION ~S :MEMORY ~S)~%" key activation memory)
     (if (eq key '+)
 	;; Add activation
 	(if (gethash memory rete-network)
@@ -299,7 +299,7 @@
 
   (defun update-count (key count-memory)
     "Increments (if <key> is '+) or decrements (if <key> is '-) <count-memory>."
-    (format trace-generated-code "~&(UPDATE-COUNT :KEY ~S :COUNT-MEMORY ~S)~%" key count-memory)
+    (format *trace-generated-code* "~&(UPDATE-COUNT :KEY ~S :COUNT-MEMORY ~S)~%" key count-memory)
     (let ((old-count (gethash count-memory rete-network))
 	  (new-count (if (eq key '+)
 			 (incf (gethash count-memory rete-network 0))
@@ -308,7 +308,7 @@
 
   (defun store (key token memory)
     "Adds <token> to (if <key> is '+) or removes from (if <key> is '-) <memory>."
-    (format trace-generated-code "~&(STORE :KEY ~S :TOKEN ~S :MEMORY ~S)~%" key token memory)
+    (format *trace-generated-code* "~&(STORE :KEY ~S :TOKEN ~S :MEMORY ~S)~%" key token memory)
     (if (eq key '+)
 	;; Add token
 	(if (gethash memory rete-network)
@@ -327,9 +327,9 @@
 		 `(t)))
 	(lhs (ldiff body (member '=> body))))
     `(progn
-       (let ((fact-bindings (make-hash-table))
-	     (ce-bindings (make-hash-table))
-	     (variable-bindings (make-hash-table)))
+       (let ((*fact-bindings* (make-hash-table))
+	     (*ce-bindings* (make-hash-table))
+	     (*variable-bindings* (make-hash-table)))
 	 (compile-lhs ,name 0 ,@lhs)
 	 (compile-rhs ',name ',@rhs)
 	 (make-production-node ',name))
@@ -367,16 +367,16 @@
 	  `(let* ((alpha-node '())
 		  (not-node '()))
 	     (setf alpha-node (make-alpha-nodes ',rule-name ',(caadr conditional-element) ',(cadr conditional-element) nil ,position))
-	     (setf (gethash ,position nodes) alpha-node) ; TBD! This should be done differently!?
+	     (setf (gethash ,position *nodes*) alpha-node) ; TBD! This should be done differently!?
 	     (setf not-node (make-single-not-node ',rule-name ,position))
 	     (connect-nodes alpha-node (make-sym not-node "-right"))))))
 
 (defmacro parse-test-ce (rule-name position conditional-element)
   (if (eq position 0)
       (format t "A Test-CE cannot appear FIRST in a rule!") ; TBD! Raise exception!?
-      `(let ((left-node (gethash ,(- position 1) nodes))
+      `(let ((left-node (gethash ,(- position 1) *nodes*))
 	     (test-node (make-test-node ',rule-name ',(cadr conditional-element) ,position)))
-	 (setf (gethash ,position nodes) test-node)
+	 (setf (gethash ,position *nodes*) test-node)
 	 (connect-nodes left-node test-node))))
 
 (defmacro parse-pattern-ce (rule-name position variable conditional-element)
@@ -384,9 +384,9 @@
     `(let ((alpha-node '())
 	   (beta-node '()))
        (unless ,(null variable)
-	 (setf (gethash ',variable fact-bindings) ,position))
+	 (setf (gethash ',variable *fact-bindings*) ,position))
        (setf alpha-node (make-alpha-nodes ',rule-name ',defstruct-name ',conditional-element ',variable ,position))
-       (setf (gethash ,position nodes) alpha-node) ; TBD! This should be done differently!?
+       (setf (gethash ,position *nodes*) alpha-node) ; TBD! This should be done differently!?
        (setf beta-node (make-beta-node ',rule-name ,position))
        (connect-nodes alpha-node (make-sym beta-node "-right")))))
 
@@ -406,7 +406,7 @@
 		(make-node-with-symbol-constraint rule-name defstruct-name slot-name slot-binding slot-constraint variable position)
 		(make-node-with-literal-constraint rule-name defstruct-name slot-name slot-constraint position))
 	  (let ((*print-pretty* t))
-	    (format print-generated-code "~&~S~%" alpha-node))
+	    (format *print-generated-code* "~&~S~%" alpha-node))
 	  (eval alpha-node)
 	  (if prev-node
 	      (connect-nodes prev-node alpha-node-name)
@@ -416,8 +416,8 @@
 
 (defun make-beta-node (rule-name position)
   (let* ((left-node (unless (eq position 0)
-		      (gethash (- position 1) nodes)))
-	 (right-node (gethash position nodes))
+		      (gethash (- position 1) *nodes*)))
+	 (right-node (gethash position *nodes*))
 	 (beta-node-name (make-sym "BETA/" rule-name "-" (format nil "~d" position)))
 	 (left-activate (make-sym beta-node-name "-LEFT"))
 	 (right-activate (make-sym beta-node-name "-RIGHT"))
@@ -425,14 +425,14 @@
 			`(let ((left-memory  ',(make-sym "MEMORY/" left-node))
 			       (right-memory ',(make-sym "MEMORY/" right-node)))
 			   (defun ,left-activate (key token timestamp)
-			     (format trace-generated-code "~&(~A :KEY ~S :TOKEN ~S :TIMESTAMP ~S)~%" ',left-activate key token timestamp)
+			     (format *trace-generated-code* "~&(~A :KEY ~S :TOKEN ~S :TIMESTAMP ~S)~%" ',left-activate key token timestamp)
 			     (dolist (fact (contents-of right-memory))
 			       (let ((tok (append token (list fact))))
 				 (when (and ,@(make-binding-test position))
 				   (store key tok ',(make-sym "MEMORY/" beta-node-name))
 				   (propagate key tok timestamp ',beta-node-name)))))
 			   (defun ,right-activate (key fact timestamp)
-			     (format trace-generated-code "~&(~A :KEY ~S :FACT ~S :TIMESTAMP ~S)~%" ',right-activate key fact timestamp)
+			     (format *trace-generated-code* "~&(~A :KEY ~S :FACT ~S :TIMESTAMP ~S)~%" ',right-activate key fact timestamp)
 			     (dolist (token (contents-of left-memory))
 			       (let ((tok (append token (list fact))))
 				 (when (and ,@(make-binding-test position))
@@ -440,26 +440,26 @@
 				   (propagate key tok timestamp ',beta-node-name))))))
 			;; Left-input adapter
 			`(defun ,right-activate (key fact timestamp)
-			   (format trace-generated-code "~&(~A :KEY ~S :FACT ~S :TIMESTAMP ~S)~%" ',right-activate key fact timestamp)
+			   (format *trace-generated-code* "~&(~A :KEY ~S :FACT ~S :TIMESTAMP ~S)~%" ',right-activate key fact timestamp)
 			   (store key (list fact) ',(make-sym "MEMORY/" beta-node-name))
 			   (propagate key (list fact) timestamp ',beta-node-name)))))
     (let ((*print-pretty* t))
-      (format print-generated-code "~&~S~%" beta-node))
+      (format *print-generated-code* "~&~S~%" beta-node))
     (eval beta-node)
     (unless (eq position 0)
       (connect-nodes left-node left-activate))
-    (setf (gethash position nodes) beta-node-name)))
+    (setf (gethash position *nodes*) beta-node-name)))
 
 (defun make-single-not-node (rule-name position)
-  (let* ((left-node (gethash (- position 1) nodes))
-	 (right-node (gethash position nodes))
+  (let* ((left-node (gethash (- position 1) *nodes*))
+	 (right-node (gethash position *nodes*))
 	 (not-node-name (make-sym "NOT/" rule-name "-" (format nil "~D" position)))
 	 (left-activate (make-sym not-node-name "-LEFT"))
 	 (right-activate (make-sym not-node-name "-RIGHT"))
 	 (not-node `(let ((left-memory ',(make-sym "MEMORY/" left-node))
 			  (right-memory ',(make-sym "MEMORY/" right-node)))
 		      (defun ,left-activate (key token timestamp)
-			(format trace-generated-code "~&(~A :KEY ~S :TOKEN ~S :TIMESTAMP ~S)~%" ',left-activate key token timestamp)
+			(format *trace-generated-code* "~&(~A :KEY ~S :TOKEN ~S :TIMESTAMP ~S)~%" ',left-activate key token timestamp)
 			(if (eq (length (contents-of right-memory)) 0)
 			    (progn
 			      (store key token ',(make-sym "MEMORY/" not-node-name))
@@ -473,7 +473,7 @@
 				      (store key token ',(make-sym "MEMORY/" not-node-name))
 				      (propagate key token timestamp ',not-node-name))))))))
 		      (defun ,right-activate (key fact timestamp)
-			(format trace-generated-code "~&(~A :KEY ~S :FACT ~S :TIMESTAMP ~S)~%" ',right-activate key fact timestamp)
+			(format *trace-generated-code* "~&(~A :KEY ~S :FACT ~S :TIMESTAMP ~S)~%" ',right-activate key fact timestamp)
 			(dolist (token (contents-of left-memory))
 			  (let ((tok (append token (list fact)))) ; TBD! This is not neccessary?!
 			    (when (and ,@(make-binding-test position))
@@ -491,10 +491,10 @@
 				       (store '- token ',(make-sym "MEMORY/" not-node-name))
 				       (propagate '- token timestamp ',not-node-name)))))))))))
     (let ((*print-pretty* t))
-      (format print-generated-code "~&~S~%" not-node))
+      (format *print-generated-code* "~&~S~%" not-node))
     (eval not-node)
     (connect-nodes left-node left-activate)
-    (setf (gethash position nodes) not-node-name)))
+    (setf (gethash position *nodes*) not-node-name)))
 
 (defun make-test-node (rule-name test-form position)
   (let ((test-node-name (make-sym "TEST/" rule-name "-" (format nil "~D" position)))
@@ -502,21 +502,21 @@
 	(list-of-variable-bindings '()))
     (maphash #'(lambda (key value)
 		 (push (make-fact-binding key value) list-of-fact-bindings))
-	     fact-bindings)
+	     *fact-bindings*)
     (maphash #'(lambda (key value)
 		 (push (make-variable-binding key value) list-of-variable-bindings))
-	     variable-bindings)
+	     *variable-bindings*)
 
     (let ((test-node
 	   `(defun ,test-node-name (key token timestamp)
-	      (format trace-generated-code "~&(~A :KEY ~S :TOKEN ~S :TIMESTAMP ~S)~%" ',test-node-name key token timestamp)
+	      (format *trace-generated-code* "~&(~A :KEY ~S :TOKEN ~S :TIMESTAMP ~S)~%" ',test-node-name key token timestamp)
 	      (let* (,@list-of-fact-bindings
 		     ,@list-of-variable-bindings)
 		(when ,test-form
 		  (store key token ',(make-sym "MEMORY/" test-node-name))
 		  (propagate key token timestamp ',test-node-name))))))
       (let ((*print-pretty* t))
-	(format print-generated-code "~&~S~%" test-node))
+	(format *print-generated-code* "~&~S~%" test-node))
       (eval test-node))
     test-node-name))
 
@@ -531,35 +531,35 @@
 			   (when prev
 			     (push `(equal (,(car b) (nth ,(caddr b) tok)) (,(car prev) (nth ,(caddr prev) tok))) result))
 			   (setf prev b))))))
-	     variable-bindings)
+	     *variable-bindings*)
     result))
 
 (defun make-production-node (rule-name)
   (let* ((production-node-name (make-sym "PRODUCTION/" rule-name))
 	 (production-memory (make-sym "MEMORY/PRODUCTION/" rule-name))
 	 (production-node `(defun ,production-node-name (key token timestamp)
-			     (format trace-generated-code "~&(~A :KEY ~S :TOKEN ~S :TIMESTAMP ~S)~%" ',production-node-name key token timestamp)
+			     (format *trace-generated-code* "~&(~A :KEY ~S :TOKEN ~S :TIMESTAMP ~S)~%" ',production-node-name key token timestamp)
 			     (if (eq key '+)
 				 (format activations "~&=> ACTIVATION: ~A ~S~%" ',rule-name token)
 				 (format activations "~&<= ACTIVATION: ~A ~S~%" ',rule-name token))
 			     (store-activation key (make-activation :rule ',rule-name
-								    :salience ,salience
+								    :salience ,*salience*
 								    :token token
 								    :timestamp timestamp
 								    :rhs-func #',(make-sym "RHS/" rule-name)
 								    :prod-mem ',production-memory)
 					       ',production-memory))))
     (let ((*print-pretty* t))
-      (format print-generated-code "~&~S~%" production-node))
+      (format *print-generated-code* "~&~S~%" production-node))
     (eval production-node)
-    (connect-nodes (gethash (- (hash-table-count nodes) 1) nodes) production-node-name)
+    (connect-nodes (gethash (- (hash-table-count *nodes*) 1) *nodes*) production-node-name)
     (add-to-production-nodes production-node-name)))
 
 (defun make-node-with-literal-constraint (rule-name defstruct-name slot-name slot-constraint position)
   (let ((node-name (make-sym "ALPHA/" rule-name "-" (format nil "~A" position) "/" defstruct-name "-" slot-name)))
     (values
      `(defun ,node-name (key fact timestamp)
-	(format trace-generated-code "~&(~A :KEY ~S :FACT ~S :TIMESTAMP ~S)~%" ',node-name key fact timestamp)
+	(format *trace-generated-code* "~&(~A :KEY ~S :FACT ~S :TIMESTAMP ~S)~%" ',node-name key fact timestamp)
 	(when (eq (,(make-sym defstruct-name "-" slot-name) fact) ,slot-constraint)
 	  (store key fact ',(make-sym "MEMORY/" node-name))
 	  (propagate key fact timestamp ',node-name)))
@@ -574,7 +574,7 @@
 			 binding-constraint)))
     (values
      `(defun ,node-name (key fact timestamp)
-	(format trace-generated-code "~&(~A :KEY ~S :FACT ~S :TIMESTAMP ~S)~%" ',node-name key fact timestamp)
+	(format *trace-generated-code* "~&(~A :KEY ~S :FACT ~S :TIMESTAMP ~S)~%" ',node-name key fact timestamp)
 	(when ,constraint
 	  (store key fact ',(make-sym "MEMORY/" node-name))
 	  (propagate key fact timestamp ',node-name)))
@@ -583,18 +583,18 @@
 (defun parse-binding-constraint (slot-binding slot-constraint slot-accessor variable position)
   (let ((fact-variable (if variable
 			   variable
-			   (gethash position ce-bindings)))
-	(binding (gethash slot-binding variable-bindings)))
+			   (gethash position *ce-bindings*)))
+	(binding (gethash slot-binding *variable-bindings*)))
     (when (not (null slot-binding))
       ;; Make sure that this slot-value is reachable in the RHS
       (when (null fact-variable)
 	(setf fact-variable (gensym))
-	(setf (gethash position ce-bindings) fact-variable)
-	(setf (gethash fact-variable fact-bindings) position))
+	(setf (gethash position *ce-bindings*) fact-variable)
+	(setf (gethash fact-variable *fact-bindings*) position))
 
       (if (not binding)
 	  (progn ; This is the first binding for this variable
-	    (setf (gethash slot-binding variable-bindings) (list (list slot-accessor fact-variable position)))
+	    (setf (gethash slot-binding *variable-bindings*) (list (list slot-accessor fact-variable position)))
 	    (when (null slot-constraint) t))
 	  
 	  (progn
@@ -605,18 +605,18 @@
 		(return `(equal (,(car b) fact) (,slot-accessor fact)))))
 
 	    ;; Create a new binding
-	    (setf (gethash slot-binding variable-bindings)
-		  (append (gethash slot-binding variable-bindings)
+	    (setf (gethash slot-binding *variable-bindings*)
+		  (append (gethash slot-binding *variable-bindings*)
 			  (list (list slot-accessor fact-variable position))))
 	    (when (null slot-constraint) t))))))
 
 (defun expand-variable (variable-name)
-  (car (gethash variable-name variable-bindings)))
+  (car (gethash variable-name *variable-bindings*)))
 
 (defun expand-variables (form)
   (maphash #'(lambda (key value)
 	       (nsubst `(,(caar value) fact) key form))
-	   variable-bindings)
+	   *variable-bindings*)
   form)
 
 (defun make-variable-binding (key value)
@@ -632,17 +632,17 @@
 	(list-of-variable-bindings '()))
     (maphash #'(lambda (key value)
 		 (push (make-fact-binding key value) list-of-fact-bindings))
-	     fact-bindings)
+	     *fact-bindings*)
     (maphash #'(lambda (key value)
 		 (push (make-variable-binding key value) list-of-variable-bindings))
-	     variable-bindings)
+	     *variable-bindings*)
     (let* ((rhs-function-name (make-sym "RHS/" rule-name))
 	   (rhs-function `(defun ,rhs-function-name (activation)
-			    (format trace-generated-code "~&(~A :ACTIVATION ~S)~%" ',rhs-function-name activation)
+			    (format *trace-generated-code* "~&(~A :ACTIVATION ~S)~%" ',rhs-function-name activation)
 			    (let* ((token (activation-token activation))
 				   ,@list-of-fact-bindings
 				   ,@list-of-variable-bindings)
 			      ,@rhs))))
       (let ((*print-pretty* t))
-	(format print-generated-code "~&~S~%" rhs-function))
+	(format *print-generated-code* "~&~S~%" rhs-function))
       (eval rhs-function))))
