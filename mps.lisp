@@ -331,7 +331,7 @@
 	     (*ce-bindings* (make-hash-table))
 	     (*variable-bindings* (make-hash-table)))
 	 (compile-lhs ,name 0 ,@lhs)
-	 (compile-rhs ',name ',@rhs)
+	 (compile-rhs ,name ,@rhs)
 	 (make-production-node ',name))
        ',name)))
 
@@ -627,7 +627,7 @@
   ;; variable-name : position
   `(,key (nth ,value token)))
 
-(defun compile-rhs (rule-name &rest rhs)
+(defmacro compile-rhs (rule-name &rest rhs)
   (let ((list-of-fact-bindings '())
 	(list-of-variable-bindings '()))
     (maphash #'(lambda (key value)
@@ -645,4 +645,4 @@
 			      ,@rhs))))
       (let ((*print-pretty* t))
 	(format *print-generated-code* "~&~S~%" rhs-function))
-      (eval rhs-function))))
+      rhs-function)))
