@@ -340,7 +340,7 @@
     (cond ((consp (car conditional-elements))
 	   (if (equal 'salience (caar conditional-elements))
 	       `(progn
-		  (setf salience ,(cadar conditional-elements))
+		  (setf *salience* ,(cadar conditional-elements))
 		  (compile-lhs ,rule-name ,position ,@(cdr conditional-elements)))
 	       `(progn
 		  (parse-ce ,rule-name ,position ,(car conditional-elements))
