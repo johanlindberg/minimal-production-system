@@ -325,14 +325,15 @@
   (let ((rhs (if (cdr (member '=> body))
 		 (cdr (member '=> body))
 		 `(t)))
-	(lhs (ldiff body (member '=> body))))
+	(lhs (ldiff body (member '=> body)))
+
+        (*fact-bindings* (make-hash-table))
+        (*ce-bindings* (make-hash-table))
+        (*variable-bindings* (make-hash-table)))
     `(progn
-       (let ((*fact-bindings* (make-hash-table))
-	     (*ce-bindings* (make-hash-table))
-	     (*variable-bindings* (make-hash-table)))
-	 (compile-lhs ,name 0 ,@lhs)
-	 (compile-rhs ,name ,@rhs)
-	 (make-production-node ',name))
+       (compile-lhs ,name 0 ,@lhs)
+       (compile-rhs ,name ,@rhs)
+       (make-production-node ',name)
        ',name)))
 
 (defmacro compile-lhs (rule-name position &rest conditional-elements)
