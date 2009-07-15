@@ -322,14 +322,13 @@
 							 (gethash memory rete-network)))))))
 
 (defmacro defrule (name &body body)
+  (setf *fact-bindings* (make-hash-table)
+        *ce-bindings* (make-hash-table)
+        *variable-bindings* (make-hash-table))
   (let ((rhs (if (cdr (member '=> body))
 		 (cdr (member '=> body))
 		 `(t)))
-	(lhs (ldiff body (member '=> body)))
-
-        (*fact-bindings* (make-hash-table))
-        (*ce-bindings* (make-hash-table))
-        (*variable-bindings* (make-hash-table)))
+	(lhs (ldiff body (member '=> body))))
     `(progn
        (compile-lhs ,name 0 ,@lhs)
        (compile-rhs ,name ,@rhs)
