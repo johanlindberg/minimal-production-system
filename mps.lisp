@@ -570,7 +570,7 @@
 	 (slot-accessor (make-sym defstruct-name "-" slot-name))
 	 (binding-constraint (parse-binding-constraint slot-binding slot-constraint slot-accessor variable position))
 	 (constraint (if slot-constraint
-			 (expand-variables slot-constraint)
+			 `(equal (,slot-accessor fact) ,(expand-variables slot-constraint))
 			 binding-constraint)))
     (values
      `(defun ,node-name (key fact timestamp)
