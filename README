@@ -15,8 +15,10 @@ are lies! See http://commentsarelies.blogspot.com/search/label/MPS
 
 Current Status
 --------------
-Currently (2009-03-17) MPS can compile very simple rules and execute them. And
-that's about it. Not very useful, but at least it's a start.
+Currently (2009-07-19) MPS can compile very simple (and some, not so, simple)
+rules and execute them. The Not-CE can still only handle one Pattern-CE but I'm
+working on that. I'm currently writing tests for all features (see /tests) and
+I'm also trying to get the Ms Manners benchmark running (see /examples).
 
 Simplest example possible
 -------------------------
