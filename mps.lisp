@@ -160,6 +160,8 @@
 	      (slot-values (cdr fact-modifier)))
 	  (when (numberp fact)
 	    (setf fact (get-fact-with-index fact)))
+          (when (symbolp fact)
+            (setf fact (eval fact)))
 	  
 	  (push `(,fact-binding ,fact) fact-bindings)
 	  (dolist (slot-value slot-values)
