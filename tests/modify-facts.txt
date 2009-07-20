@@ -11,7 +11,7 @@ FOO
 >> (defparameter *fact* #S(foo :bar 1))
 *FACT*
 >> *fact*
-(#S(FOO :BAR 1))
+#S(FOO :BAR 1)
 >> (assert-facts *fact*)
 -> |=> FACT: F-1 #S(FOO :BAR 1)|
 1
@@ -20,7 +20,7 @@ FOO
 >> (facts)
 (#S(FOO :BAR 2))
 >> *fact*
-(#S(FOO :BAR 2))
+#S(FOO :BAR 2)
 >> (modify-facts (*fact* (bar 3)))
 1
 >> (facts)
