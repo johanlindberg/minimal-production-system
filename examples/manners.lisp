@@ -72,14 +72,14 @@
    ?f1 <- (context (state 'assign_seats))
    (seating (seat1 ?seat1) (seat2 ?seat2) (name2 ?n2) (id ?id) (pid ?pid) (path_done 'yes))
    (guest (name ?n2) (sex ?s1) (hobby ?h1))
-   (guest (name ?g2) (sex ~?s1) (hobby ?h1))
+   (guest (name ?g2) (sex ?s2 (not (equal ?s1 ?s2))) (hobby ?h1))
    ?f5 <- (count (c ?c))
    (not (path (id ?id) (name ?g2)))
    (not (chosen (id ?id) (name ?g2) (hobby ?h1)))
    =>
-   (assert-facts (seating (seat1 ?seat2) (name1 ?n2) (name2 ?g2) (seat2 (+ ?seat2 1)) (id ?c) (pid ?id) (path_done 'no)))
-   (assert-facts (path (id ?c) (name ?g2) (seat (+ ?seat2 1))))
-   (assert-facts (chosen (id ?id) (name ?g2) (hobby ?h1)))
+   (assert-facts #S(seating :seat1 ?seat2 :name1 ?n2 :name2 ?g2 :seat2 (+ ?seat2 1) :id ?c :pid ?id :path_done 'no))
+   (assert-facts #S(path :id ?c :name ?g2 :seat (+ ?seat2 1)))
+   (assert-facts #S(chosen :id ?id :name ?g2 :hobby ?h1))
    (modify-facts (?f5 (c (+ ?c 1))))
    (format ?*output* "seat ~A ~A ~A" ?seat2 ?n2 ?g2)
    (modify-facts (?f1 (state 'make_path))))
@@ -95,7 +95,7 @@
    (path (id ?pid) (name ?n1) (seat ?s))
    (not (path (id ?id) (name ?n1)))
    =>
-   (assert-facts (path (id ?id) (name ?n1) (seat ?s))))
+   (assert-facts #S(path :id ?id :name ?n1 :seat ?s)))
 
 ;;; *********
 ;;; path_done
