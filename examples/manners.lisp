@@ -3,15 +3,9 @@
 ;;; This version is based on the CLIPS version, available at
 ;;; http://clipsrules.sourceforge.net
 
-;;; #############
-;;; Defparameters
-;;; #############
-
 (defparameter ?*output* nil) ; Disabled = nil Enabled = t
 
-;;; ##########
-;;; Defstructs
-;;; ##########
+;;; Structs
 
 (defstruct guest 
    name
@@ -46,13 +40,24 @@
 (defstruct count 
    c)
 
-;;; ########
-;;; Defrules
-;;; ########
+;;; Guests
 
-;;; *****************
-;;; assign_first_seat
-;;; *****************
+(deffacts guests
+  #S(guest :name 'n1 :sex 'm :hobby 'h3)
+  #S(guest :name 'n1 :sex 'm :hobby 'h2)
+  #S(guest :name 'n2 :sex 'm :hobby 'h1)
+  #S(guest :name 'n2 :sex 'm :hobby 'h2)
+  #S(guest :name 'n2 :sex 'm :hobby 'h3)
+  #S(guest :name 'n3 :sex 'f :hobby 'h3)
+  #S(guest :name 'n3 :sex 'f :hobby 'h2)
+  #S(guest :name 'n4 :sex 'f :hobby 'h1)
+  #S(guest :name 'n4 :sex 'f :hobby 'h2)
+  #S(guest :name 'n4 :sex 'f :hobby 'h3)
+  #S(last_seat :seat 4)
+  #S(count :c 1)
+  #S(context :state 'start))
+
+;;; Rules
 
 (defrule assign_first_seat
    ?f1 <- (context (state 'start))
@@ -63,10 +68,6 @@
                  #S(path :id ?c :name ?n :seat 1))
    (modify-facts (?f3 (c (+ ?c 1))))
    (modify-facts (?f1 (state 'assign_seats))))
-
-;;; ************
-;;; find_seating
-;;; ************
 
 (defrule find_seating
    ?f1 <- (context (state 'assign_seats))
@@ -84,10 +85,6 @@
    (format ?*output* "seat ~A ~A ~A" ?seat2 ?n2 ?g2)
    (modify-facts (?f1 (state 'make_path))))
 
-;;; *********
-;;; make_path
-;;; *********
-
 (defrule make_path
    (salience 1)
    (context (state 'make_path))
@@ -97,20 +94,12 @@
    =>
    (assert-facts #S(path :id ?id :name ?n1 :seat ?s)))
 
-;;; *********
-;;; path_done
-;;; *********
-
 (defrule path_done
    ?f1 <- (context (state 'make_path))
    ?f2 <- (seating (path_done 'no))
    =>
    (modify-facts (?f2 (path_done 'yes)))
    (modify-facts (?f1 (state 'check_done))))
-
-;;; ***********
-;;; are_we_done
-;;; ***********
 
 (defrule are_we_done
    ?f1 <- (context (state 'check_done))
@@ -120,18 +109,10 @@
    (format ?*output* "~%Yes, we are done!!")
    (modify-facts (?f1 (state 'print_results))))
 
-;;; ********
-;;; continue
-;;; ********
-
 (defrule continue
    ?f1 <- (context (state 'check_done))
    =>
    (modify-facts (?f1 (state 'assign_seats))))
-
-;;; *************
-;;; print_results
-;;; *************
 
 (defrule print_results
    (salience 1)
@@ -142,10 +123,6 @@
    =>
    (retract-facts ?f4)
    (format ?*output* "~A ~A" ?n ?s))
-
-;;; ********
-;;; all_done
-;;; ********
 
 (defrule all_done
    (context (state 'print_results))
