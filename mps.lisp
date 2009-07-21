@@ -6,6 +6,7 @@
 	   :assert-facts
 	   :batch
 	   :clear
+           :deffacts
 	   :defrule
 	   :facts
 	   :modify-facts
@@ -24,12 +25,14 @@
 		   (space 0)
 		   (debug 3)))
 
+(defparameter *deffacts* (make-hash-table))
+
 ;;; Watch parameters
-(defparameter activations t)
-(defparameter compilations nil) ; TBD
-(defparameter facts t)
-(defparameter rules t)
-(defparameter statistics nil) ; TBD
+(defparameter *activations* t)
+(defparameter *compilations* nil) ; TBD
+(defparameter *facts* t)
+(defparameter *rules* t)
+(defparameter *statistics* nil) ; TBD
 
 ;;; Compilation globals
 (defparameter *variable-bindings* (make-hash-table))
@@ -99,7 +102,7 @@
 	  (incf current-fact-index)
 	  (setf (gethash fact working-memory) current-fact-index)
 	  (setf (gethash current-fact-index working-memory) fact)
-	  (format facts "~&=> FACT: F-~D ~S~%" current-fact-index fact)
+	  (format *facts* "~&=> FACT: F-~D ~S~%" current-fact-index fact)
 	  (incf count)
 	  (mapcar #'(lambda (nodes)
 		      (if (consp nodes)
@@ -134,11 +137,19 @@
     (clrhash rete-network)
     (clrhash working-memory)
 
+    (clrhash *deffacts*)
+
     (setf root-node (setf (gethash 'root rete-network) (make-hash-table)))
     (setf current-fact-index 0)
     (setf current-timestamp 0)
 
     t)
+
+  (defmacro deffacts (name &rest facts)
+    (setf (gethash name *deffacts*) '())
+    (dolist (fact facts)
+      (push fact (gethash name *deffacts*)))
+    `,(length (gethash name *deffacts*)))
 
   (defun facts ()
     "Returns all facts in Working Memory."
@@ -158,11 +169,17 @@
          ,@modify-forms)))
 
   (defun reset ()
-    "Clears the Working Memory and Rete Network memory nodes of facts."
+    "Clears the Working Memory and Rete Network memory nodes of facts and then
+     asserts all facts defined in deffacts forms."
     (clrhash working-memory)
     (mapcar #'(lambda (memory)
 		(setf (gethash memory rete-network) '()))
 	    (all-memory-nodes))
+
+    (maphash #'(lambda (name facts)
+                 (declare (ignore name))
+                 (eval `(assert-facts ,@facts)))
+             *deffacts*)
 
     t)
 
@@ -177,7 +194,7 @@
 	  (let ((fact-index (get-fact-index-of fact)))
 	    (remhash fact-index working-memory)
 	    (remhash fact working-memory)
-	    (format facts "~&<= FACT: F-~D ~S~%" fact-index fact)
+	    (format *facts* "~&<= FACT: F-~D ~S~%" fact-index fact)
 	    (incf count)
 	    (mapcar #'(lambda (node)
 			(funcall node '- fact current-timestamp))
@@ -193,7 +210,7 @@
 	 ((or (eq limit 0)
 	      (= (length curr-agenda) 0)) execution-count)
       (let* ((activation (first curr-agenda)))
-	(format rules "~&FIRE: ~A ~S~%" (activation-rule activation) (activation-token activation))
+	(format *rules* "~&FIRE: ~A ~S~%" (activation-rule activation) (activation-token activation))
 	(funcall (activation-rhs-func activation) activation)
 	(store-activation '- activation (activation-prod-mem activation)))))
 
@@ -548,8 +565,8 @@
 	 (production-node `(defun ,production-node-name (key token timestamp)
 			     (format *trace-generated-code* "~&(~A :KEY ~S :TOKEN ~S :TIMESTAMP ~S)~%" ',production-node-name key token timestamp)
 			     (if (eq key '+)
-				 (format activations "~&=> ACTIVATION: ~A ~S~%" ',rule-name token)
-				 (format activations "~&<= ACTIVATION: ~A ~S~%" ',rule-name token))
+				 (format *activations* "~&=> ACTIVATION: ~A ~S~%" ',rule-name token)
+				 (format *activations* "~&<= ACTIVATION: ~A ~S~%" ',rule-name token))
 			     (store-activation key (make-activation :rule ',rule-name
 								    :salience ,*salience*
 								    :token token
