@@ -64,7 +64,7 @@
    (guest (name ?n))
    ?f3 <- (count (c ?c))
    =>
-   (assert-facts #S(seating :seat1 1 :name1 ?n :name2 ?n :seat2 1 :id ?c :pid 0 :path_done 'yes)
+   (assert-facts #S(seating :seat1 1 :name1 ?n :name2 ?n :seat2 1 :id ?c :pid 0 :path_done yes)
                  #S(path :id ?c :name ?n :seat 1))
    (modify-facts (?f3 (c (+ ?c 1))))
    (modify-facts (?f1 (state 'assign_seats))))
@@ -78,7 +78,7 @@
    (not (path (id ?id) (name ?g2)))
    (not (chosen (id ?id) (name ?g2) (hobby ?h1)))
    =>
-   (assert-facts #S(seating :seat1 ?seat2 :name1 ?n2 :name2 ?g2 :seat2 (+ ?seat2 1) :id ?c :pid ?id :path_done 'no))
+   (assert-facts #S(seating :seat1 ?seat2 :name1 ?n2 :name2 ?g2 :seat2 (+ ?seat2 1) :id ?c :pid ?id :path_done no))
    (assert-facts #S(path :id ?c :name ?g2 :seat (+ ?seat2 1)))
    (assert-facts #S(chosen :id ?id :name ?g2 :hobby ?h1))
    (modify-facts (?f5 (c (+ ?c 1))))
