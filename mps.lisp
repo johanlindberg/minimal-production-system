@@ -161,12 +161,26 @@
 
       result))
 
+  (defun update-slot (fact slot-name new-value)
+    (eval `(setf (,(make-sym (type-of fact) "-" slot-name) ,fact) ,new-value)))
+
   (defmacro modify-facts (&rest fact-modifiers)
-    (let ((modify-forms '()))
+    "Modifies a fact in Working Memory as specified in <fact-modifiers>."
+    (let ((fact-bindings '())
+          (modify-forms '()))
       (dolist (fact-modifier fact-modifiers)
-        (push `(modify-fact ',fact-modifier) modify-forms))
-      `(progn
-         ,@modify-forms)))
+        (let ((fact (car fact-modifier))
+              (fact-binding (gensym))
+              (slot-values (cdr fact-modifier)))
+          (push `(,fact-binding ,fact) fact-bindings)
+          (dolist (slot-value slot-values)
+            (let ((slot-name (car slot-value))
+                  (slot-value (cadr slot-value)))
+                  (push `(update-slot ,fact ',slot-name ,slot-value) modify-forms)))))
+      `(let (,@fact-bindings)
+               (retract-facts ,@(mapcar #'car fact-bindings))
+               ,@modify-forms
+               (assert-facts ,@(mapcar #'car fact-bindings)))))
 
   (defun reset ()
     "Clears the Working Memory and Rete Network memory nodes of facts and then
@@ -224,28 +238,6 @@
 
 
   ;; Private API
-  (defun modify-fact (fact-modifier)
-    "Modifies a fact in Working Memory as specified in <fact-modifier>."
-    (let ((fact-bindings '())
-          (modify-forms '()))
-      (let ((fact (car fact-modifier))
-            (fact-binding (gensym))
-            (slot-values (cdr fact-modifier)))
-        (when (numberp fact)
-          (setf fact (get-fact-with-index fact)))
-        (when (symbolp fact)
-          (setf fact (eval fact)))
-        
-        (push `(,fact-binding ,fact) fact-bindings)
-        (dolist (slot-value slot-values)
-          (let ((slot-name (car slot-value))
-                (slot-value (cadr slot-value)))
-            (push `(setf (,(make-sym (type-of fact) "-" slot-name) ,fact-binding) ,slot-value) modify-forms))))
-      (eval `(let (,@fact-bindings)
-               (retract-facts ,@(mapcar #'car fact-bindings))
-               ,@modify-forms
-               (assert-facts ,@(mapcar #'car fact-bindings))))))
-
   (defun add-to-production-nodes (node)
     "Adds <node> to the list of production nodes."
     (let ((production-memory (make-sym "MEMORY/" node)))
