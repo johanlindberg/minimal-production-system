@@ -136,8 +136,10 @@
     "Clears the engine. NOTE! clear does NOT remove defstructs."
     (clrhash rete-network)
     (clrhash working-memory)
+    (clrhash *nodes*)
 
     (clrhash *deffacts*)
+
 
     (setf root-node (setf (gethash 'root rete-network) (make-hash-table)))
     (setf current-fact-index 0)
@@ -161,26 +163,15 @@
 
       result))
 
-  (defun update-slot (fact slot-name new-value)
-    (eval `(setf (,(make-sym (type-of fact) "-" slot-name) ,fact) ,new-value)))
+  (defmacro modify-fact (fact modifier-fn)
+    "Modifies a <fact> in Working Memory as specified in <modifier-fn>.
 
-  (defmacro modify-facts (&rest fact-modifiers)
-    "Modifies a fact in Working Memory as specified in <fact-modifiers>."
-    (let ((fact-bindings '())
-          (modify-forms '()))
-      (dolist (fact-modifier fact-modifiers)
-        (let ((fact (car fact-modifier))
-              (fact-binding (gensym))
-              (slot-values (cdr fact-modifier)))
-          (push `(,fact-binding ,fact) fact-bindings)
-          (dolist (slot-value slot-values)
-            (let ((slot-name (car slot-value))
-                  (slot-value (cadr slot-value)))
-                  (push `(update-slot ,fact ',slot-name ,slot-value) modify-forms)))))
-      `(let (,@fact-bindings)
-               (retract-facts ,@(mapcar #'car fact-bindings))
-               ,@modify-forms
-               (assert-facts ,@(mapcar #'car fact-bindings)))))
+     <modifier-fn> needs to be a function that takes one argument (fact)."
+    (let ((temp-reference (gensym)))      
+      `(let ((,temp-reference ,fact))
+         (retract-facts ,temp-reference)
+         (funcall ,modifier-fn ,fact)
+         (assert-facts ,temp-reference))))
 
   (defun reset ()
     "Clears the Working Memory and Rete Network memory nodes of facts and then
