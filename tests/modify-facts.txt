@@ -1,4 +1,4 @@
-;; doctests for modify-facts functionality
+;; doctests for modify-fact functionality
 >> (progn
      (unless (equal (package-name *package*) "MPS")
        (in-package :mps))
@@ -15,15 +15,17 @@ FOO
 >> (assert-facts *fact*)
 -> |=> FACT: F-1 #S(FOO :BAR 1)|
 1
->> (modify-facts (*fact* (bar 2)))
+>> (modify-fact *fact* #'(lambda (f)
+                            (setf (foo-bar f) 2)))
 1
 >> (facts)
 (#S(FOO :BAR 2))
 >> *fact*
 #S(FOO :BAR 2)
->> (modify-facts (#S(foo :bar 2) (bar 3)))
+>> (modify-fact #S(FOO :BAR 2) #'(lambda (f)
+                                   (setf (foo-bar f) 'baz)))
 1
 >> (facts)
-(#S(FOO :BAR 3))
+(#S(FOO :BAR BAZ))
 >> *fact*
 #S(FOO :BAR 2)
