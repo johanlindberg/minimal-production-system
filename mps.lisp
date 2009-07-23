@@ -4,7 +4,6 @@
   (:use :common-lisp)
   (:export :agenda
 	   :assert-facts
-	   :batch
 	   :clear
            :deffacts
 	   :defrule
@@ -113,25 +112,6 @@
 
       count))
 
-  (defun batch (file)
-    "Evaluates the contents of <file> as a series commands."
-    (let ((*print-pretty* t)
-	  (count 0))
-      (with-open-file (stream file
-			      :direction :input
-			      :if-does-not-exist nil)
-	(do ((form (read stream) (progn
-				   (incf count)
-				   (read stream nil 'eof))))
-	    ((eq form 'eof))
-	  (format t "~&~A> ~S~%" (if (package-nicknames *package*)
-				     (car (package-nicknames *package*))
-				     (package-name *package*)) form)
-	  (let ((result (multiple-value-list (eval form))))
-	    (format t "~&~{~S~%~}~%" result))))
-
-      count))
-
   (defun clear ()
     "Clears the engine. NOTE! clear does NOT remove defstructs."
     (clrhash rete-network)
@@ -139,7 +119,6 @@
     (clrhash *nodes*)
 
     (clrhash *deffacts*)
-
 
     (setf root-node (setf (gethash 'root rete-network) (make-hash-table)))
     (setf current-fact-index 0)
