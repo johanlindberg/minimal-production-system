@@ -98,17 +98,18 @@
       (incf current-timestamp)
       (dolist (fact fact-list)
 	(unless (gethash fact working-memory)
-	  (incf current-fact-index)
-	  (setf (gethash fact working-memory) current-fact-index)
-	  (setf (gethash current-fact-index working-memory) fact)
-	  (format *facts* "~&=> FACT: F-~D ~S~%" current-fact-index fact)
-	  (incf count)
-	  (mapcar #'(lambda (nodes)
-		      (if (consp nodes)
-			  (dolist (node nodes)
-			    (funcall node '+ fact current-timestamp))
-			  (funcall nodes '+ fact current-timestamp)))
-		  (gethash (type-of fact) (gethash 'root rete-network)))))
+          (let ((fact-copy (copy-structure fact)))
+            (incf current-fact-index)
+            (setf (gethash fact-copy working-memory) current-fact-index)
+            (setf (gethash current-fact-index working-memory) fact-copy)
+            (format *facts* "~&=> FACT: F-~D ~S~%" current-fact-index fact-copy)
+            (incf count)
+            (mapcar #'(lambda (nodes)
+                        (if (consp nodes)
+                            (dolist (node nodes)
+                              (funcall node '+ fact-copy current-timestamp))
+                            (funcall nodes '+ fact-copy current-timestamp)))
+                    (gethash (type-of fact-copy) (gethash 'root rete-network))))))
 
       count))
 
@@ -155,16 +156,13 @@
   (defun reset ()
     "Clears the Working Memory and Rete Network memory nodes of facts and then
      asserts all facts defined in deffacts forms."
-    (clrhash working-memory)
-    (mapcar #'(lambda (memory)
-		(setf (gethash memory rete-network) '()))
-	    (all-memory-nodes))
+    (apply #'retract-facts (facts))
 
-    (maphash #'(lambda (name facts)
+    (maphash #'(lambda (name fact-list)
                  (declare (ignore name))
-                 (eval `(assert-facts ,@facts)))
+                 (apply #'assert-facts fact-list))
              *deffacts*)
-
+    
     t)
 
   (defun retract-facts (&rest fact-list)
