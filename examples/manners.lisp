@@ -64,10 +64,10 @@
    (guest (name ?n))
    ?f3 <- (count (c ?c))
    =>
-   (assert-facts #S(seating :seat1 1 :name1 ?n :name2 ?n :seat2 1 :id ?c :pid 0 :path_done yes)
-                 #S(path :id ?c :name ?n :seat 1))
-   (modify-facts (?f3 (c (+ ?c 1))))
-   (modify-facts (?f1 (state 'assign_seats))))
+   (assert-facts (make-seating :seat1 1 :name1 ?n :name2 ?n :seat2 1 :id ?c :pid 0 :path_done 'yes)
+                 (make-path :id ?c :name ?n :seat 1))
+   (modify-fact ?f3 #'(lambda (fact) (setf (count-c fact) (+ ?c 1))))
+   (modify-fact ?f1 #'(lambda (fact) (setf (context-state fact) 'assign_seats))))
 
 (defrule find_seating
    ?f1 <- (context (state 'assign_seats))
@@ -78,12 +78,12 @@
    (not (path (id ?id) (name ?g2)))
    (not (chosen (id ?id) (name ?g2) (hobby ?h1)))
    =>
-   (assert-facts #S(seating :seat1 ?seat2 :name1 ?n2 :name2 ?g2 :seat2 (+ ?seat2 1) :id ?c :pid ?id :path_done no))
-   (assert-facts #S(path :id ?c :name ?g2 :seat (+ ?seat2 1)))
-   (assert-facts #S(chosen :id ?id :name ?g2 :hobby ?h1))
-   (modify-facts (?f5 (c (+ ?c 1))))
+   (assert-facts (make-seating :seat1 ?seat2 :name1 ?n2 :name2 ?g2 :seat2 (+ ?seat2 1) :id ?c :pid ?id :path_done 'no))
+   (assert-facts (make-path :id ?c :name ?g2 :seat (+ ?seat2 1)))
+   (assert-facts (make-chosen :id ?id :name ?g2 :hobby ?h1))
+   (modify-fact ?f5 #'(lambda (fact) (setf (count-c fact) (+ ?c 1))))
    (format ?*output* "seat ~A ~A ~A" ?seat2 ?n2 ?g2)
-   (modify-facts (?f1 (state 'make_path))))
+   (modify-fact ?f1 #'(lambda (fact) (setf (context-state fact) 'make_path))))
 
 (defrule make_path
    (salience 1)
@@ -92,14 +92,14 @@
    (path (id ?pid) (name ?n1) (seat ?s))
    (not (path (id ?id) (name ?n1)))
    =>
-   (assert-facts #S(path :id ?id :name ?n1 :seat ?s)))
+   (assert-facts (make-path :id ?id :name ?n1 :seat ?s)))
 
 (defrule path_done
    ?f1 <- (context (state 'make_path))
    ?f2 <- (seating (path_done 'no))
    =>
-   (modify-facts (?f2 (path_done 'yes)))
-   (modify-facts (?f1 (state 'check_done))))
+   (modify-fact ?f2 #'(lambda (fact) (setf (seating-path_done fact) 'yes)))
+   (modify-fact ?f1 #'(lambda (fact) (setf (context-state fact) 'check_done))))
 
 (defrule are_we_done
    ?f1 <- (context (state 'check_done))
@@ -107,12 +107,12 @@
    (seating (seat2 ?l_seat))
    =>
    (format ?*output* "~%Yes, we are done!!")
-   (modify-facts (?f1 (state 'print_results))))
+   (modify-fact ?f1 #'(lambda (fact) (setf (context-state fact) 'print_results))))
 
 (defrule continue
    ?f1 <- (context (state 'check_done))
    =>
-   (modify-facts (?f1 (state 'assign_seats))))
+   (modify-fact ?f1 #'(lambda (fact) (setf (context-state fact) 'assign_seats))))
 
 (defrule print_results
    (salience 1)
