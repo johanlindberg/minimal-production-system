@@ -8,7 +8,7 @@
            :deffacts
 	   :defrule
 	   :facts
-	   :modify-facts
+	   :modify-fact
 	   :reset
 	   :retract-facts
 	   :run))
