@@ -15,7 +15,7 @@
 (in-package :mps)
 
 (defstruct activation
-  rule salience token timestamp rhs-func prod-mem)
+  rule salience token timestamp rhs-function production-memory)
 
 ;;; Debug parameters
 (defparameter *print-generated-code* nil)
@@ -193,8 +193,8 @@
 	      (= (length curr-agenda) 0)) execution-count)
       (let* ((activation (first curr-agenda)))
 	(format *rules* "~&FIRE: ~A ~S~%" (activation-rule activation) (activation-token activation))
-	(funcall (activation-rhs-func activation) activation)
-	(store-activation '- activation (activation-prod-mem activation)))))
+	(funcall (activation-rhs-function activation) activation)
+	(store-activation '- activation (activation-production-memory activation)))))
 
 
   ; Conditional element macros
@@ -366,14 +366,18 @@
 
 (defmacro parse-pattern-ce (rule-name position variable conditional-element)
   (let ((defstruct-name (car conditional-element)))
-    `(let ((alpha-node '())
-	   (beta-node '()))
+    `(let ((beta-node '()))
        (unless ,(null variable)
 	 (setf (gethash ',variable *fact-bindings*) ,position))
-       (setf alpha-node (make-alpha-nodes ',rule-name ',defstruct-name ',conditional-element ',variable ,position))
-       (setf (gethash ,position *nodes*) alpha-node) ; TBD! This should be done differently!?
-       (setf beta-node (make-beta-node ',rule-name ,position))
-       (connect-nodes alpha-node (make-sym beta-node "-right")))))
+       ;; If the slot constraint contains variables from other patterns
+       ;; the test must be performed in a beta-node. Make-alpha-nodes will
+       ;; return nil if no such tests are neccessary otherwise it returns
+       ;; the constraint (unparsed) as a second value.
+       (multiple-value-bind (alpha-node defferred-tests)
+           (make-alpha-nodes ',rule-name ',defstruct-name ',conditional-element ',variable ,position)
+         (setf (gethash ,position *nodes*) alpha-node) ; TBD! This should be done differently!?
+         (setf beta-node (make-beta-node ',rule-name ,position defferred-tests))
+         (connect-nodes alpha-node (make-sym beta-node "-right"))))))
 
 (defun make-alpha-nodes (rule-name defstruct-name conditional-element variable position)
   (let ((prev-node '()))
@@ -397,9 +401,9 @@
 	      (connect-nodes prev-node alpha-node-name)
 	      (add-to-root defstruct-name alpha-node-name))
 	  (setf prev-node alpha-node-name))))
-    prev-node))
+    (values prev-node nil)))
 
-(defun make-beta-node (rule-name position)
+(defun make-beta-node (rule-name position defferred-tests)
   (let* ((left-node (unless (eq position 0)
 		      (gethash (- position 1) *nodes*)))
 	 (right-node (gethash position *nodes*))
@@ -531,8 +535,8 @@
 								    :salience ,*salience*
 								    :token token
 								    :timestamp timestamp
-								    :rhs-func #',(make-sym "RHS/" rule-name)
-								    :prod-mem ',production-memory)
+								    :rhs-function #',(make-sym "RHS/" rule-name)
+								    :production-memory ',production-memory)
 					       ',production-memory))))
     (let ((*print-pretty* t))
       (format *print-generated-code* "~&~S~%" production-node))
