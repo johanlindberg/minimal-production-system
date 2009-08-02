@@ -369,18 +369,15 @@
     `(let ((beta-node '()))
        (unless ,(null variable)
 	 (setf (gethash ',variable *fact-bindings*) ,position))
-       ;; If the slot constraint contains variables from other patterns
-       ;; the test must be performed in a beta-node. Make-alpha-nodes will
-       ;; return nil if no such tests are neccessary otherwise it returns
-       ;; the constraint (unparsed) as a second value.
-       (multiple-value-bind (alpha-node defferred-tests)
+       (multiple-value-bind (alpha-node deferred-tests)
            (make-alpha-nodes ',rule-name ',defstruct-name ',conditional-element ',variable ,position)
          (setf (gethash ,position *nodes*) alpha-node) ; TBD! This should be done differently!?
-         (setf beta-node (make-beta-node ',rule-name ,position defferred-tests))
+         (setf beta-node (make-beta-node ',rule-name ,position deferred-tests))
          (connect-nodes alpha-node (make-sym beta-node "-right"))))))
 
 (defun make-alpha-nodes (rule-name defstruct-name conditional-element variable position)
-  (let ((prev-node '()))
+  (let ((prev-node '())
+        (deferred-tests '()))
     (dolist (slot (cdr conditional-element))
       (let* ((slot-name (car slot))
 	     (slot-binding (if (variable-p (cadr slot))
@@ -389,11 +386,15 @@
 	     (slot-constraint (if (null slot-binding)
 				  (cadr slot)
 				  (caddr slot))))
+        (when (defer? slot-binding slot-constraint)
+          (push slot-constraint deferred-tests)
+          (setq slot-constraint '()))
+
 	(multiple-value-bind (alpha-node alpha-node-name)
-	    (if (or (consp slot-constraint)
-		    (symbolp slot-constraint))
-		(make-node-with-symbol-constraint rule-name defstruct-name slot-name slot-binding slot-constraint variable position)
-		(make-node-with-literal-constraint rule-name defstruct-name slot-name slot-constraint position))
+            (if (or (consp slot-constraint)
+                    (symbolp slot-constraint))
+                (make-node-with-symbol-constraint rule-name defstruct-name slot-name slot-binding slot-constraint variable position)
+                (make-node-with-literal-constraint rule-name defstruct-name slot-name slot-constraint position))
 	  (let ((*print-pretty* t))
 	    (format *print-generated-code* "~&~S~%" alpha-node))
 	  (eval alpha-node)
@@ -401,9 +402,18 @@
 	      (connect-nodes prev-node alpha-node-name)
 	      (add-to-root defstruct-name alpha-node-name))
 	  (setf prev-node alpha-node-name))))
-    (values prev-node nil)))
+    (values prev-node deferred-tests)))
 
-(defun make-beta-node (rule-name position defferred-tests)
+(defun defer? (var constraint)
+  (when var
+    (cond ((null (car constraint)) '())
+          ((atom (car constraint)) (or (and (variable-p (car constraint))
+                                            (not (equal var (car constraint))))
+                                       (defer? var (cdr constraint))))
+          ((consp (car constraint)) (or (defer? var (car constraint))
+                                        (defer? var (cdr constraint)))))))
+
+(defun make-beta-node (rule-name position deferred-tests)
   (let* ((left-node (unless (eq position 0)
 		      (gethash (- position 1) *nodes*)))
 	 (right-node (gethash position *nodes*))
@@ -417,14 +427,14 @@
 			     (format *trace-generated-code* "~&(~A :KEY ~S :TOKEN ~S :TIMESTAMP ~S)~%" ',left-activate key token timestamp)
 			     (dolist (fact (contents-of right-memory))
 			       (let ((tok (append token (list fact))))
-				 (when (and ,@(make-binding-test position))
+				 (when (and ,@(make-binding-test position) ,@(expand-variables-token deferred-tests))
 				   (store key tok ',(make-sym "MEMORY/" beta-node-name))
 				   (propagate key tok timestamp ',beta-node-name)))))
 			   (defun ,right-activate (key fact timestamp)
 			     (format *trace-generated-code* "~&(~A :KEY ~S :FACT ~S :TIMESTAMP ~S)~%" ',right-activate key fact timestamp)
 			     (dolist (token (contents-of left-memory))
 			       (let ((tok (append token (list fact))))
-				 (when (and ,@(make-binding-test position))
+				 (when (and ,@(make-binding-test position) ,@(expand-variables-token deferred-tests))
 				   (store key tok ',(make-sym "MEMORY/" beta-node-name))
 				   (propagate key tok timestamp ',beta-node-name))))))
 			;; Left-input adapter
@@ -605,6 +615,12 @@
 (defun expand-variables (form)
   (maphash #'(lambda (key value)
 	       (nsubst `(,(caar value) fact) key form))
+	   *variable-bindings*)
+  form)
+
+(defun expand-variables-token (form)
+  (maphash #'(lambda (key value)
+	       (nsubst `(,(caar value) (nth ,(caddar value) tok)) key form))
 	   *variable-bindings*)
   form)
 
