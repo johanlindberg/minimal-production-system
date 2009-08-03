@@ -20,6 +20,8 @@
 ;;; Debug parameters
 (defparameter *print-generated-code* nil)
 (defparameter *trace-generated-code* nil)
+(defparameter **print-generated-code* t)
+(defparameter **trace-generated-code* t)
 (declaim (optimize (speed 0)
 		   (space 0)
 		   (debug 3)))
@@ -282,13 +284,17 @@
 				    (equalp (activation-token item) (activation-token activation))))
 			   (gethash memory rete-network))))))
 
-  (defun update-count (key count-memory)
-    "Increments (if <key> is '+) or decrements (if <key> is '-) <count-memory>."
-    (format *trace-generated-code* "~&(UPDATE-COUNT :KEY ~S :COUNT-MEMORY ~S)~%" key count-memory)
-    (let ((old-count (gethash count-memory rete-network))
+  (defun update-count (key token count-memory)
+    "Increments (if <key> is '+) or decrements (if <key> is '-) <count-memory> for <token>."
+    (format *trace-generated-code* "~&(UPDATE-COUNT :KEY ~S :TOKEN ~S :COUNT-MEMORY ~S)~%" key token count-memory)
+    (unless (gethash count-memory rete-network)
+      (print `(generated hash-table for ,count-memory ,token))
+      (setf (gethash count-memory rete-network) (make-hash-table :test #'equalp)))
+    (print `(contents of ,count-memory ,token = ,(gethash token (gethash count-memory rete-network))))
+    (let ((old-count (gethash token (gethash count-memory rete-network)))
 	  (new-count (if (eq key '+)
-			 (incf (gethash count-memory rete-network 0))
-			 (decf (gethash count-memory rete-network 0)))))
+			 (incf (gethash token (gethash count-memory rete-network) 0))
+			 (decf (gethash token (gethash count-memory rete-network) 0)))))
       (values new-count old-count)))
 
   (defun store (key token memory)
@@ -467,7 +473,8 @@
 			      (let ((tok (append token (list fact))))
 				(when (and ,@(make-binding-test position))
 				  (multiple-value-bind (new-count old-count)
-				      (update-count key ',(make-sym "COUNT-MEMORY/" not-node-name))
+				      (update-count key tok ',(make-sym "COUNT-MEMORY/" not-node-name))
+                                    (declare (ignore old-count))
 				    (when (eq new-count 0)
 				      (store key token ',(make-sym "MEMORY/" not-node-name))
 				      (propagate key token timestamp ',not-node-name))))))))
@@ -477,7 +484,7 @@
 			  (let ((tok (append token (list fact)))) ; TBD! This is not neccessary?!
 			    (when (and ,@(make-binding-test position))
 			      (multiple-value-bind (new-count old-count)
-				  (update-count key ',(make-sym "COUNT-MEMORY/" not-node-name))
+				  (update-count key tok ',(make-sym "COUNT-MEMORY/" not-node-name))
 				(cond ((and (eq new-count 0)
 					    (eq old-count 1)
 					    (eq key '-))
@@ -528,7 +535,7 @@
 		     (dolist (b v)
 		       (if (eql position (caddr b))
 			   (when prev
-			     (push `(equal (,(car b) (nth ,(caddr b) tok)) (,(car prev) (nth ,(caddr prev) tok))) result))
+			     (push `(equalp (,(car b) (nth ,(caddr b) tok)) (,(car prev) (nth ,(caddr prev) tok))) result))
 			   (setf prev b))))))
 	     *variable-bindings*)
     result))
@@ -569,7 +576,7 @@
 	 (slot-accessor (make-sym defstruct-name "-" slot-name))
 	 (binding-constraint (parse-binding-constraint slot-binding slot-constraint slot-accessor variable position))
 	 (constraint (if slot-constraint
-			 `(equal (,slot-accessor fact) ,(expand-variables slot-constraint))
+			 `(equalp (,slot-accessor fact) ,(expand-variables slot-constraint))
 			 binding-constraint)))
     (values
      `(defun ,node-name (key fact timestamp)
@@ -601,7 +608,7 @@
 	      ;; If this position already has a binding for this variable we'll
 	      ;; return an alpha-constraint
 	      (when (equal position (caddr b))
-		(return `(equal (,(car b) fact) (,slot-accessor fact)))))
+		(return `(equalp (,(car b) fact) (,slot-accessor fact)))))
 
 	    ;; Create a new binding
 	    (setf (gethash slot-binding *variable-bindings*)
