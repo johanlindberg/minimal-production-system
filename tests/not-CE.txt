@@ -6,15 +6,40 @@
 NIL
 >> (clear)
 T
->> (defstruct foo bar)
+>> (defstruct foo bar baz)
 FOO
->> (defrule test
+>> (defrule test1
      (foo (bar 1))
      (not (foo (bar 2)))
      =>
      (print token))
-TEST
+TEST1
 >> (assert-facts #S(foo :bar 1))
 1
 >> (length (agenda))
 1
+>> (assert-facts #S(foo :bar 2))
+1
+>> (multiple-value-list (agenda))
+(NIL 0)
+>> (retract-facts #S(foo :bar 2))
+1
+>> (length (agenda))
+1
+>> (reset)
+T
+>> (defrule test2
+     (foo (bar ?bar) (baz ?baz1))
+     (not (foo (bar ?bar) (baz ?baz2 (equal ?baz1 (+ ?baz2 1)))))
+     =>
+     (print `(,?bar ,?baz1 ,?baz2)))
+TEST2
+>>  (assert-facts #S(foo :bar 1 :baz 2))
+1
+>> (length (agenda))
+1
+>>  (assert-facts #S(foo :bar 1 :baz 3))
+1
+>> (length (agenda))
+1
+
