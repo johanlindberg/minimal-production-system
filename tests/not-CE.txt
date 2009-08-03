@@ -1,0 +1,20 @@
+;; doctests for not-CE functionality
+>> (progn
+     (unless (equal (package-name *package*) "MPS")
+       (in-package :mps))
+     NIL)
+NIL
+>> (clear)
+T
+>> (defstruct foo bar)
+FOO
+>> (defrule test
+     (foo (bar 1))
+     (not (foo (bar 2)))
+     =>
+     (print token))
+TEST
+>> (assert-facts #S(foo :bar 1))
+1
+>> (length (agenda))
+1
