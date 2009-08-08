@@ -27,6 +27,8 @@
 		   (debug 3)))
 
 (defparameter *deffacts* (make-hash-table))
+(defparameter *defined-rules* '())
+(defparameter *generated-functions* '())
 
 ;;; Watch parameters
 (defparameter *activations* t)
@@ -121,6 +123,7 @@
     (clrhash working-memory)
     (clrhash *nodes*)
 
+    (setf *defined-rules* '())
     (clrhash *deffacts*)
 
     (setf root-node (setf (gethash 'root rete-network) (make-hash-table)))
@@ -286,15 +289,15 @@
 
   (defun update-count (key token count-memory)
     "Increments (if <key> is '+) or decrements (if <key> is '-) <count-memory> for <token>."
-    (format *trace-generated-code* "~&(UPDATE-COUNT :KEY ~S :TOKEN ~S :COUNT-MEMORY ~S)~%" key token count-memory)
+    (format **trace-generated-code* "~&(UPDATE-COUNT :KEY ~S :TOKEN ~S :COUNT-MEMORY ~S)" key token count-memory)
     (unless (gethash count-memory rete-network)
-      (print `(generated hash-table for ,count-memory ,token))
       (setf (gethash count-memory rete-network) (make-hash-table :test #'equalp)))
-    (print `(contents of ,count-memory ,token = ,(gethash token (gethash count-memory rete-network))))
+    (format **trace-generated-code* " > ~S" (gethash token (gethash count-memory rete-network)))
     (let ((old-count (gethash token (gethash count-memory rete-network)))
 	  (new-count (if (eq key '+)
 			 (incf (gethash token (gethash count-memory rete-network) 0))
 			 (decf (gethash token (gethash count-memory rete-network) 0)))))
+      (format **trace-generated-code* " -> (~S ~S)~%" new-count old-count)
       (values new-count old-count)))
 
   (defun store (key token memory)
@@ -313,18 +316,22 @@
 							 (gethash memory rete-network)))))))
 
 (defmacro defrule (name &body body)
-  (setf *fact-bindings* (make-hash-table)
-        *ce-bindings* (make-hash-table)
-        *variable-bindings* (make-hash-table))
-  (let ((rhs (if (cdr (member '=> body))
-		 (cdr (member '=> body))
-		 `(t)))
-	(lhs (ldiff body (member '=> body))))
-    `(progn
-       (compile-lhs ,name 0 ,@lhs)
-       (compile-rhs ,name ,@rhs)
-       (make-production-node ',name)
-       ',name)))
+  (if (member name *defined-rules*)
+      (format t "~&Cannot redefine rule: ~A" name)
+      (progn
+        (push name *defined-rules*)
+        (setf *fact-bindings* (make-hash-table)
+              *ce-bindings* (make-hash-table)
+              *variable-bindings* (make-hash-table))
+        (let ((rhs (if (cdr (member '=> body))
+                       (cdr (member '=> body))
+                       `(t)))
+              (lhs (ldiff body (member '=> body))))
+          `(progn
+             (compile-lhs ,name 0 ,@lhs)
+             (compile-rhs ,name ,@rhs)
+             (make-production-node ',name)
+             ',name)))))
 
 (defmacro compile-lhs (rule-name position &rest conditional-elements)
   (unless (eq (car conditional-elements) 'nil)
@@ -445,7 +452,7 @@
 				   (propagate key tok timestamp ',beta-node-name))))))
 			;; Left-input adapter
 			`(defun ,right-activate (key fact timestamp)
-			   (format *trace-generated-code* "~&(~A :KEY ~S :FACT ~S :TIMESTAMP ~S)~%" ',right-activate key fact timestamp)
+			   (format **trace-generated-code* "~&(~A :KEY ~S :FACT ~S :TIMESTAMP ~S)~%" ',right-activate key fact timestamp)
 			   (store key (list fact) ',(make-sym "MEMORY/" beta-node-name))
 			   (propagate key (list fact) timestamp ',beta-node-name)))))
     (let ((*print-pretty* t))
@@ -464,9 +471,10 @@
 	 (not-node `(let ((left-memory ',(make-sym "MEMORY/" left-node))
 			  (right-memory ',(make-sym "MEMORY/" right-node)))
 		      (defun ,left-activate (key token timestamp)
-			(format *trace-generated-code* "~&(~A :KEY ~S :TOKEN ~S :TIMESTAMP ~S)~%" ',left-activate key token timestamp)
+			(format **trace-generated-code* "~&(~A :KEY ~S :TOKEN ~S :TIMESTAMP ~S)~%" ',left-activate key token timestamp)
 			(if (eq (length (contents-of right-memory)) 0)
 			    (progn
+                              (update-count key token ',(make-sym "COUNT-MEMORY/" not-node-name))
 			      (store key token ',(make-sym "MEMORY/" not-node-name))
 			      (propagate key token timestamp ',not-node-name))			    
 			    (dolist (fact (contents-of right-memory))
@@ -479,22 +487,21 @@
 				      (store key token ',(make-sym "MEMORY/" not-node-name))
 				      (propagate key token timestamp ',not-node-name))))))))
 		      (defun ,right-activate (key fact timestamp)
-			(format *trace-generated-code* "~&(~A :KEY ~S :FACT ~S :TIMESTAMP ~S)~%" ',right-activate key fact timestamp)
+			(format **trace-generated-code* "~&(~A :KEY ~S :FACT ~S :TIMESTAMP ~S)~%" ',right-activate key fact timestamp)
 			(dolist (token (contents-of left-memory))
 			  (let ((tok (append token (list fact)))) ; TBD! This is not neccessary?!
 			    (when (and ,@(make-binding-test position))
 			      (multiple-value-bind (new-count old-count)
 				  (update-count key tok ',(make-sym "COUNT-MEMORY/" not-node-name))
+                                (store key token ',(make-sym "MEMORY/" not-node-name))
 				(cond ((and (eq new-count 0)
 					    (eq old-count 1)
 					    (eq key '-))
-				       (store '+ token ',(make-sym "MEMORY/" not-node-name))
 				       (propagate '+ token timestamp ',not-node-name))
 				      ((and (eq new-count 1)
 					    (or (eq old-count 0)
 						(eq old-count nil))
 					    (eq key '+))
-				       (store '- token ',(make-sym "MEMORY/" not-node-name))
 				       (propagate '- token timestamp ',not-node-name)))))))))))
     (let ((*print-pretty* t))
       (format *print-generated-code* "~&~S~%" not-node))

@@ -11,8 +11,7 @@ FOO
 >> (defrule test1
      (foo (bar 1))
      (not (foo (bar 2)))
-     =>
-     (print token))
+     =>)
 TEST1
 >> (assert-facts #S(foo :bar 1))
 1
@@ -20,26 +19,45 @@ TEST1
 1
 >> (assert-facts #S(foo :bar 2))
 1
->> (multiple-value-list (agenda))
-(NIL 0)
+>> (length (agenda))
+0
 >> (retract-facts #S(foo :bar 2))
 1
->> (length (agenda))
+>> (length (agenda)) ; 10
 1
 >> (reset)
 T
+>> (defstruct foo1 bar baz)
+FOO1
 >> (defrule test2
-     (foo (bar ?bar) (baz ?baz1))
-     (not (foo (bar ?bar) (baz ?baz2 (equal ?baz1 (+ ?baz2 1)))))
-     =>
-     (print `(,?bar ,?baz1 ,?baz2)))
+     (foo (bar ?bar))
+     (not (foo1 (bar ?bar)))
+     =>)
 TEST2
->>  (assert-facts #S(foo :bar 1 :baz 2))
+>> (assert-facts #S(foo :bar 1))
+1
+>> (length (facts))
 1
 >> (length (agenda))
-1
->>  (assert-facts #S(foo :bar 1 :baz 3))
+2 ; Both TEST1 and TEST2 have activations
+>> (assert-facts #S(foo1 :bar 1))
 1
 >> (length (agenda))
+1 ; TEST1 still has an activation
+>> (reset) ; 19
+T
+>> (defrule test3
+     (foo (bar ?bar) (baz ?baz))
+     (not (foo1 (bar ?bar) (baz ?baz)))
+     =>)
+TEST3
+>> (assert-facts #S(foo :bar 1 :baz 1))
 1
-
+>> (length (agenda))
+3 ; TEST1, TEST2 and TEST3 have activations
+>> (assert-facts #S(foo1 :bar 1 :baz 1))
+1
+>> (length (agenda))
+1 ; TEST1 still has an activation
+>> (reset)
+T
