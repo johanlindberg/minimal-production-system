@@ -1,4 +1,4 @@
-;; doctests for not-CE functionality
+;; doctests for Not-CE functionality
 >> (progn
      (unless (equal (package-name *package*) "MPS")
        (in-package :mps))
@@ -8,11 +8,11 @@ NIL
 T
 >> (defstruct foo bar baz)
 FOO
->> (defrule test1
+>> (defrule test
      (foo (bar 1))
      (not (foo (bar 2)))
      =>)
-TEST1
+TEST
 >> (assert-facts #S(foo :bar 1))
 1
 >> (length (agenda))
@@ -25,39 +25,47 @@ TEST1
 1
 >> (length (agenda)) ; 10
 1
->> (reset)
+>> (clear)
 T
+
 >> (defstruct foo1 bar baz)
 FOO1
->> (defrule test2
+>> (defrule test
      (foo (bar ?bar))
      (not (foo1 (bar ?bar)))
      =>)
-TEST2
+TEST
 >> (assert-facts #S(foo :bar 1))
 1
 >> (length (facts))
 1
 >> (length (agenda))
-2 ; Both TEST1 and TEST2 have activations
+1
 >> (assert-facts #S(foo1 :bar 1))
 1
 >> (length (agenda))
-1 ; TEST1 still has an activation
->> (reset) ; 19
+0
+>> (assert-facts #S(foo1 :bar 2))
+1
+>> (retract-facts #S(foo1 :bar 1))
+1
+>> (length (agenda))
+1
+>> (clear) ; 22
 T
->> (defrule test3
+
+>> (defrule test
      (foo (bar ?bar) (baz ?baz))
      (not (foo1 (bar ?bar) (baz ?baz)))
      =>)
-TEST3
+TEST
 >> (assert-facts #S(foo :bar 1 :baz 1))
 1
 >> (length (agenda))
-3 ; TEST1, TEST2 and TEST3 have activations
+1
 >> (assert-facts #S(foo1 :bar 1 :baz 1))
 1
 >> (length (agenda))
-1 ; TEST1 still has an activation
+0
 >> (reset)
 T

@@ -1,0 +1,18 @@
+;; doctests for running all doctests
+>> (progn
+     (unless (equal (package-name *package*) "MPS")
+       (in-package :mps))
+     NIL)
+NIL
+>> (defparameter *path-to-tests* "~/Projects/minimal-production-system/tests")
+*path-to-tests*
+>> (defparameter *tests* '("beta-node.txt"
+                           "modify-facts.txt"
+                           "not-CE.txt"))
+*tests*
+>> (apply #'+
+          (mapcar #'(lambda (f)
+                      (let ((filename (format nil "~A/~A" *path-to-tests* f)))
+                        (test-file filename)))
+                  *tests*))
+0
