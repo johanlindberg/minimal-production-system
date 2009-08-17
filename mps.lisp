@@ -20,8 +20,6 @@
 ;;; Debug parameters
 (defparameter *print-generated-code* nil)
 (defparameter *trace-generated-code* nil)
-(defparameter **print-generated-code* t)
-(defparameter **trace-generated-code* t)
 (declaim (optimize (speed 0)
 		   (space 0)
 		   (debug 3)))
@@ -195,8 +193,8 @@
 	  (execution-count 0 (+ execution-count 1))
 	  (limit limit (- limit 1)))
 	 ((or (eq limit 0)
-	      (= (length curr-agenda) 0)) execution-count)
-      (let* ((activation (first curr-agenda)))
+	      (eq (length curr-agenda) 0)) execution-count)
+      (let ((activation (first curr-agenda)))
 	(format *rules* "~&FIRE: ~A ~S~%" (activation-rule activation) (activation-token activation))
 	(funcall (activation-rhs-function activation) activation)
 	(store-activation '- activation (activation-production-memory activation)))))
@@ -580,9 +578,13 @@
   (let* ((node-name (make-sym "ALPHA/" rule-name "-" (format nil "~A" position) "/" defstruct-name "-" slot-name))
 	 (slot-accessor (make-sym defstruct-name "-" slot-name))
 	 (binding-constraint (parse-binding-constraint slot-binding slot-constraint slot-accessor variable position))
-	 (constraint (if slot-constraint
-			 `(equalp (,slot-accessor fact) ,(expand-variables slot-constraint))
-			 binding-constraint)))
+         (constraint (cond ((and binding-constraint slot-constraint)
+                            `(and ,binding-constraint ,(expand-variables slot-constraint)))
+                           (binding-constraint
+                            binding-constraint)
+                           (slot-constraint
+                            (expand-variables slot-constraint))
+                           (t nil))))
     (values
      `(defun ,node-name (key fact timestamp)
 	(format *trace-generated-code* "~&(~A :KEY ~S :FACT ~S :TIMESTAMP ~S)~%" ',node-name key fact timestamp)
