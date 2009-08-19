@@ -1,0 +1,28 @@
+;; doctests for alpha nodes
+>> (progn
+     (unless (equal (package-name *package*) "MPS")
+       (in-package :mps))
+     NIL)
+NIL
+>> (clear)
+T
+>> (defstruct foo bar)
+FOO
+>> (defrule test1
+     (foo (bar 'test))
+     =>)
+TEST1
+>> (assert-facts #S(foo :bar 'test))
+1
+>> (length (agenda))
+1
+>> (clear)
+T
+>> (defrule test2
+     (foo (bar 1))
+     =>)
+TEST2
+>> (assert-facts #S(foo :bar 1))
+1
+>> (length (agenda))
+1

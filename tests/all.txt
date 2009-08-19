@@ -6,7 +6,8 @@
 NIL
 >> (defparameter *path-to-tests* "~/Projects/minimal-production-system/tests")
 *path-to-tests*
->> (defparameter *tests* '("beta-node.txt"
+>> (defparameter *tests* '("alpha-node.txt"
+                           "beta-node.txt"
                            "modify-facts.txt"
                            "not-CE.txt"))
 *tests*

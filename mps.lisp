@@ -401,7 +401,8 @@
 
 	(multiple-value-bind (alpha-node alpha-node-name)
             (if (or (consp slot-constraint)
-                    (symbolp slot-constraint))
+                    (and (symbolp slot-constraint)
+                         (not (variable-p slot-constraint))))
                 (make-node-with-symbol-constraint rule-name defstruct-name slot-name slot-binding slot-constraint variable position)
                 (make-node-with-literal-constraint rule-name defstruct-name slot-name slot-constraint position))
 	  (let ((*print-pretty* t))
@@ -569,7 +570,7 @@
     (values
      `(defun ,node-name (key fact timestamp)
 	(format *trace-generated-code* "~&(~A :KEY ~S :FACT ~S :TIMESTAMP ~S)~%" ',node-name key fact timestamp)
-	(when (eq (,(make-sym defstruct-name "-" slot-name) fact) ,slot-constraint)
+	(when (equalp (,(make-sym defstruct-name "-" slot-name) fact) ',slot-constraint)
 	  (store key fact ',(make-sym "MEMORY/" node-name))
 	  (propagate key fact timestamp ',node-name)))
      node-name)))

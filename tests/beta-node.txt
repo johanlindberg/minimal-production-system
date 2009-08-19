@@ -11,10 +11,22 @@ FOO
 >> (defrule test
      (foo (bar ?bar1))
      (foo (bar ?bar2))
-     =>
-     (print `(,?bar1 ,?bar2)))
+     =>)
 TEST
 >> (assert-facts #S(foo :bar 1) #S(foo :bar 2))
 2
 >> (length (agenda))
 4
+>> (clear)
+T
+>> (defstruct foo1 bar)
+FOO1
+>> (defrule test
+     (foo (bar ?v))
+     (foo1 (bar ?v))
+     =>)
+TEST
+>> (assert-facts #S(foo :bar 1) #S(foo1 :bar 1))
+2
+>> (length (agenda))
+1
