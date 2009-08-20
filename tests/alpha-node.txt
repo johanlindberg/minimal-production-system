@@ -12,11 +12,13 @@ FOO
      (foo (bar 'test))
      =>)
 TEST1
->> (assert-facts #S(foo :bar 'test))
-1
+>> (assert-facts #S(foo :bar test) #S(foo :bar bar))
+2
 >> (length (agenda))
 1
->> (clear)
+>> (activation-token (car (agenda)))
+(#S(FOO :BAR TEST))
+>> (reset)
 T
 >> (defrule test2
      (foo (bar 1))
