@@ -146,6 +146,38 @@
 
       result))
 
+  (defun token-to-string (token)
+    (format nil "~{f-~A,~}" (mapcar #'(lambda (fact)
+                                        (get-fact-index-of fact))
+                                    token)))
+
+  (defun facts-to-indexes (facts)
+    (mapcar #'(lambda (fact)
+                (get-fact-index-of fact))
+            facts))
+
+  (defun matches (rule-name)
+    (let ((alpha-memory (concatenate 'string "MEMORY/ALPHA/" (string rule-name)))
+          (beta-memory (concatenate 'string "MEMORY/BETA/" (string rule-name)))
+          (production-memory (concatenate 'string "MEMORY/PRODUCTION/" (string rule-name)))
+          (i 0)
+          (j 0))
+      (dolist (mem (sort (all-memory-nodes) #'string-lessp))
+        (let ((memory-node (string mem)))
+          (cond ((string-equal (subseq memory-node 0 (length alpha-memory)) alpha-memory)
+                 (format t "~&Matches for pattern ~A:~%~{f-~A~%~}" (incf i) (facts-to-indexes (contents-of mem))))
+                ((string-equal (subseq memory-node 0 (length beta-memory)) beta-memory)
+                 (if (> j 0)
+                     (unless (= (- i j) 1)
+                       (format t "~&Partial matches for patterns 1-~A:~%~{~A~%~}" (incf j) (mapcar #'(lambda (token)
+                                                                                                       (token-to-string token))
+                                                                                                   (contents-of mem))))
+                     (incf j)))
+                ((string-equal (subseq memory-node 0 (length production-memory)) production-memory)
+                 (format t "~&Complete matches for ~A:~%~{~A~%~}" (string rule-name) (mapcar #'(lambda (activation)
+                                                                                                 (token-to-string (activation-token activation)))
+                                                                                             (contents-of mem)))))))))
+
   (defmacro modify-fact (fact modifier-fn)
     "Modifies a <fact> in Working Memory as specified in <modifier-fn>.
 
