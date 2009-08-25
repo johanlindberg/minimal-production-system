@@ -67,5 +67,15 @@ TEST
 1
 >> (length (agenda))
 0
->> (reset)
+>> (clear)
 T
+>> (defrule test
+     (foo (bar ?bar) (baz ?baz1))
+     (not (foo1 (bar ?bar) (baz ?baz2 (> ?baz1 ?baz2))))
+     =>)
+TEST
+>> (assert-facts #S(foo :bar 1 :baz 1) #S(foo1 :bar 1 :baz 1))
+2
+>> (length (agenda))
+1
+
