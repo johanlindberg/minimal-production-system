@@ -402,12 +402,12 @@
       (format t "A Not-CE cannot appear FIRST in a rule!") ; TBD! Raise exception!?
       (if (> (length (cdr conditional-element)) 1)
 	  (format t "A Not-CE cannot contain more than one Pattern-CE!") ; TBD!
-	  `(let* ((alpha-node '())
-		  (not-node '()))
-	     (setf alpha-node (make-alpha-nodes ',rule-name ',(caadr conditional-element) ',(cadr conditional-element) nil ,position))
-	     (setf (gethash ,position *nodes*) alpha-node) ; TBD! This should be done differently!?
-	     (setf not-node (make-single-not-node ',rule-name ,position))
-	     (connect-nodes alpha-node (make-sym not-node "-right"))))))
+	  `(let ((not-node '()))
+             (multiple-value-bind (alpha-node deferred-tests)
+                 (make-alpha-nodes ',rule-name ',(caadr conditional-element) ',(cadr conditional-element) nil ,position)
+               (setf (gethash ,position *nodes*) alpha-node) ; TBD! This should be done differently!?
+               (setf not-node (make-single-not-node ',rule-name ,position deferred-tests))
+               (connect-nodes alpha-node (make-sym not-node "-right")))))))
 
 (defmacro parse-test-ce (rule-name position conditional-element)
   (if (eq position 0)
@@ -503,7 +503,7 @@
       (connect-nodes left-node left-activate))
     (setf (gethash position *nodes*) beta-node-name)))
 
-(defun make-single-not-node (rule-name position)
+(defun make-single-not-node (rule-name position deferred-tests)
   (let* ((left-node (gethash (- position 1) *nodes*))
 	 (right-node (gethash position *nodes*))
 	 (not-node-name (make-sym "NOT/" rule-name "-" (format nil "~D" position)))
@@ -520,7 +520,7 @@
 			      (propagate key token timestamp ',not-node-name))			    
 			    (dolist (fact (contents-of right-memory))
 			      (let ((tok (append token (list fact))))
-				(when (and ,@(make-binding-test position))
+				(when (and ,@(make-binding-test position) ,@(expand-variables-token deferred-tests))
 				  (multiple-value-bind (new-count old-count)
 				      (update-count key tok ',(make-sym "COUNT-MEMORY/" not-node-name))
                                     (declare (ignore old-count))
@@ -531,7 +531,7 @@
 			(format *trace-generated-code* "~&(~A :KEY ~S :FACT ~S :TIMESTAMP ~S)~%" ',right-activate key fact timestamp)
 			(dolist (token (contents-of left-memory))
 			  (let ((tok (append token (list fact)))) ; TBD! This is not neccessary?!
-			    (when (and ,@(make-binding-test position))
+			    (when (and ,@(make-binding-test position) ,@(expand-variables-token deferred-tests))
 			      (multiple-value-bind (new-count old-count)
 				  (update-count key tok ',(make-sym "COUNT-MEMORY/" not-node-name))
                                 (store key token ',(make-sym "MEMORY/" not-node-name))
