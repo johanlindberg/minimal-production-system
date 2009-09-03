@@ -194,7 +194,7 @@
     "Modifies a <fact> in Working Memory as specified in <modifier-fn>.
 
      <modifier-fn> needs to be a function that takes one argument (fact)."
-    (let ((temp-reference (gensym)))      
+    (let ((temp-reference (gensym))) 
       `(let ((,temp-reference ,fact))
          (retract-facts ,temp-reference)
          (funcall ,modifier-fn ,fact)
@@ -360,7 +360,8 @@
       (format t "~&Cannot redefine rule: ~A" name)
       (progn
         (push name *defrules*)
-        (setf *fact-bindings* (make-hash-table)
+        (setf *nodes* (make-hash-table)
+              *fact-bindings* (make-hash-table)
               *ce-bindings* (make-hash-table)
               *variable-bindings* (make-hash-table))
         (let ((rhs (if (cdr (member '=> body))
@@ -453,7 +454,7 @@
 	    (format *print-generated-code* "~&~S~%" alpha-node))
 	  (eval alpha-node)
 	  (if prev-node
-	      (connect-nodes prev-node alpha-node-name)
+              (connect-nodes prev-node alpha-node-name)
 	      (add-to-root defstruct-name alpha-node-name))
 	  (setf prev-node alpha-node-name))))
     (values prev-node deferred-tests)))
@@ -520,13 +521,12 @@
 			      (propagate key token timestamp ',not-node-name))			    
 			    (dolist (fact (contents-of right-memory))
 			      (let ((tok (append token (list fact))))
-				(when (and ,@(make-binding-test position) ,@(expand-variables-token deferred-tests))
+				(unless (and ,@(make-binding-test position) ,@(expand-variables-token deferred-tests))
 				  (multiple-value-bind (new-count old-count)
 				      (update-count key tok ',(make-sym "COUNT-MEMORY/" not-node-name))
                                     (declare (ignore old-count))
-				    (when (eq new-count 0)
-				      (store key token ',(make-sym "MEMORY/" not-node-name))
-				      (propagate key token timestamp ',not-node-name))))))))
+                                    (store key token ',(make-sym "MEMORY/" not-node-name))
+                                    (propagate key token timestamp ',not-node-name)))))))
 		      (defun ,right-activate (key fact timestamp)
 			(format *trace-generated-code* "~&(~A :KEY ~S :FACT ~S :TIMESTAMP ~S)~%" ',right-activate key fact timestamp)
 			(dolist (token (contents-of left-memory))
