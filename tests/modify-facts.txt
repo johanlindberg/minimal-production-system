@@ -13,7 +13,6 @@ FOO
 >> *fact*
 #S(FOO :BAR 1)
 >> (assert-facts *fact*)
--> |=> FACT: F-1 #S(FOO :BAR 1)|
 1
 >> (modify-fact *fact* #'(lambda (f)
                             (setf (foo-bar f) 2)))
