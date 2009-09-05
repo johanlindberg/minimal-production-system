@@ -78,4 +78,20 @@ TEST
 2
 >> (length (agenda))
 1
-
+>> (clear)
+T
+>> (defrule test
+     (foo (bar ?bar))
+     (not (foo (bar ?v (> ?v 1))))
+     (not (foo (baz ?v (> ?v 1))))
+     (foo (baz ?baz))
+     =>)
+TEST
+>> (assert-facts #S(foo :bar 0 :baz 0))
+1
+>> (length (agenda))
+1
+>> (assert-facts #S(foo :bar 2 :baz 0))
+1
+>> (length (agenda))
+0

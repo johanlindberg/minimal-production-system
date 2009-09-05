@@ -29,7 +29,7 @@
 (defparameter *generated-functions* '())
 
 ;;; Watch parameters
-(defparameter *activations* t)
+(defparameter *activations* nil)
 (defparameter *compilations* nil) ; TBD
 (defparameter *facts* t)
 (defparameter *rules* t)
@@ -204,7 +204,7 @@
     "Clears the Working Memory and Rete Network memory nodes of facts and then
      asserts all facts defined in deffacts forms."
     (apply #'retract-facts (facts))
-
+    (setf current-fact-index 0)
     (maphash #'(lambda (name fact-list)
                  (declare (ignore name))
                  (apply #'assert-facts fact-list))
@@ -363,7 +363,8 @@
         (setf *nodes* (make-hash-table)
               *fact-bindings* (make-hash-table)
               *ce-bindings* (make-hash-table)
-              *variable-bindings* (make-hash-table))
+              *variable-bindings* (make-hash-table)
+              *salience* 0)
         (let ((rhs (if (cdr (member '=> body))
                        (cdr (member '=> body))
                        `(t)))
@@ -405,7 +406,7 @@
 	  (format t "A Not-CE cannot contain more than one Pattern-CE!") ; TBD!
 	  `(let ((not-node '()))
              (multiple-value-bind (alpha-node deferred-tests)
-                 (make-alpha-nodes ',rule-name ',(caadr conditional-element) ',(cadr conditional-element) nil ,position)
+                 (make-alpha-nodes ',rule-name ',(caadr conditional-element) ',(cadr conditional-element) nil ,position nil)
                (setf (gethash ,position *nodes*) alpha-node) ; TBD! This should be done differently!?
                (setf not-node (make-single-not-node ',rule-name ,position deferred-tests))
                (connect-nodes alpha-node (make-sym not-node "-right")))))))
@@ -424,12 +425,12 @@
        (unless ,(null variable)
 	 (setf (gethash ',variable *fact-bindings*) ,position))
        (multiple-value-bind (alpha-node deferred-tests)
-           (make-alpha-nodes ',rule-name ',defstruct-name ',conditional-element ',variable ,position)
+           (make-alpha-nodes ',rule-name ',defstruct-name ',conditional-element ',variable ,position t)
          (setf (gethash ,position *nodes*) alpha-node) ; TBD! This should be done differently!?
          (setf beta-node (make-beta-node ',rule-name ,position deferred-tests))
          (connect-nodes alpha-node (make-sym beta-node "-right"))))))
 
-(defun make-alpha-nodes (rule-name defstruct-name conditional-element variable position)
+(defun make-alpha-nodes (rule-name defstruct-name conditional-element variable position accessible)
   (let ((prev-node '())
         (deferred-tests '()))
     (dolist (slot (cdr conditional-element))
@@ -448,7 +449,7 @@
             (if (or (and (consp slot-constraint)
                          (not (equalp (car slot-constraint) 'quote)))
                     (symbolp slot-constraint))
-                (make-node-with-symbol-constraint rule-name defstruct-name slot-name slot-binding slot-constraint variable position)
+                (make-node-with-symbol-constraint rule-name defstruct-name slot-name slot-binding slot-constraint variable position accessible)
                 (make-node-with-literal-constraint rule-name defstruct-name slot-name slot-constraint position))
 	  (let ((*print-pretty* t))
 	    (format *print-generated-code* "~&~S~%" alpha-node))
@@ -515,35 +516,37 @@
 		      (defun ,left-activate (key token timestamp)
 			(format *trace-generated-code* "~&(~A :KEY ~S :TOKEN ~S :TIMESTAMP ~S)~%" ',left-activate key token timestamp)
 			(if (eq (length (contents-of right-memory)) 0)
-			    (progn
+			    (let ((tok (append token (list nil))))
                               (update-count key token ',(make-sym "COUNT-MEMORY/" not-node-name))
-			      (store key token ',(make-sym "MEMORY/" not-node-name))
-			      (propagate key token timestamp ',not-node-name))			    
+			      (store key tok ',(make-sym "MEMORY/" not-node-name))
+			      (propagate key tok timestamp ',not-node-name))			    
 			    (dolist (fact (contents-of right-memory))
-			      (let ((tok (append token (list fact))))
+			      (let ((tok (append token (list fact)))
+                                    (ptok (append token (list nil))))
 				(unless (and ,@(make-binding-test position) ,@(expand-variables-token deferred-tests))
 				  (multiple-value-bind (new-count old-count)
 				      (update-count key tok ',(make-sym "COUNT-MEMORY/" not-node-name))
                                     (declare (ignore old-count))
-                                    (store key token ',(make-sym "MEMORY/" not-node-name))
-                                    (propagate key token timestamp ',not-node-name)))))))
+                                    (store key ptok ',(make-sym "MEMORY/" not-node-name))
+                                    (propagate key ptok timestamp ',not-node-name)))))))
 		      (defun ,right-activate (key fact timestamp)
 			(format *trace-generated-code* "~&(~A :KEY ~S :FACT ~S :TIMESTAMP ~S)~%" ',right-activate key fact timestamp)
 			(dolist (token (contents-of left-memory))
-			  (let ((tok (append token (list fact)))) ; TBD! This is not neccessary?!
+			  (let ((tok (append token (list fact)))
+                                (ptok (append token (list nil))))
 			    (when (and ,@(make-binding-test position) ,@(expand-variables-token deferred-tests))
 			      (multiple-value-bind (new-count old-count)
 				  (update-count key tok ',(make-sym "COUNT-MEMORY/" not-node-name))
-                                (store key token ',(make-sym "MEMORY/" not-node-name))
+                                (store key ptok ',(make-sym "MEMORY/" not-node-name))
 				(cond ((and (eq new-count 0)
 					    (eq old-count 1)
 					    (eq key '-))
-				       (propagate '+ token timestamp ',not-node-name))
+				       (propagate '+ ptok timestamp ',not-node-name))
 				      ((and (eq new-count 1)
 					    (or (eq old-count 0)
 						(eq old-count nil))
 					    (eq key '+))
-				       (propagate '- token timestamp ',not-node-name)))))))))))
+				       (propagate '- ptok timestamp ',not-node-name)))))))))))
     (let ((*print-pretty* t))
       (format *print-generated-code* "~&~S~%" not-node))
     (eval not-node)
@@ -584,7 +587,8 @@
 		       (if (eql position (caddr b))
 			   (when prev
 			     (push `(equalp (,(car b) (nth ,(caddr b) tok)) (,(car prev) (nth ,(caddr prev) tok))) result))
-			   (setf prev b))))))
+                           (when (cadddr b)
+                             (setf prev b)))))))
 	     *variable-bindings*)
     result))
 
@@ -619,10 +623,10 @@
 	  (propagate key fact timestamp ',node-name)))
      node-name)))
 
-(defun make-node-with-symbol-constraint (rule-name defstruct-name slot-name slot-binding slot-constraint variable position)
+(defun make-node-with-symbol-constraint (rule-name defstruct-name slot-name slot-binding slot-constraint variable position accessible)
   (let* ((node-name (make-sym "ALPHA/" rule-name "-" (format nil "~A" position) "/" defstruct-name "-" slot-name))
 	 (slot-accessor (make-sym defstruct-name "-" slot-name))
-	 (binding-constraint (parse-binding-constraint slot-binding slot-constraint slot-accessor variable position))
+	 (binding-constraint (parse-binding-constraint slot-binding slot-constraint slot-accessor variable position accessible))
          (constraint (cond ((and binding-constraint slot-constraint)
                             `(and ,binding-constraint ,(expand-variables slot-constraint)))
                            (binding-constraint
@@ -638,7 +642,7 @@
 	  (propagate key fact timestamp ',node-name)))
      node-name)))
 
-(defun parse-binding-constraint (slot-binding slot-constraint slot-accessor variable position)
+(defun parse-binding-constraint (slot-binding slot-constraint slot-accessor variable position accessible)
   (let ((fact-variable (if variable
 			   variable
 			   (gethash position *ce-bindings*)))
@@ -652,7 +656,7 @@
 
       (if (not binding)
 	  (progn ; This is the first binding for this variable
-	    (setf (gethash slot-binding *variable-bindings*) (list (list slot-accessor fact-variable position)))
+	    (setf (gethash slot-binding *variable-bindings*) (list (list slot-accessor fact-variable position accessible)))
 	    (when (null slot-constraint) t))
 	  
 	  (progn
@@ -663,9 +667,9 @@
 		(return `(equalp (,(car b) fact) (,slot-accessor fact)))))
 
 	    ;; Create a new binding
-	    (setf (gethash slot-binding *variable-bindings*)
-		  (append (gethash slot-binding *variable-bindings*)
-			  (list (list slot-accessor fact-variable position))))
+            (setf (gethash slot-binding *variable-bindings*)
+                  (append (gethash slot-binding *variable-bindings*)
+                          (list (list slot-accessor fact-variable position accessible))))
 	    (when (null slot-constraint) t))))))
 
 (defun expand-variable (variable-name)
