@@ -3,7 +3,7 @@
 ;;; This version is based on the CLIPS version, available at
 ;;; http://clipsrules.sourceforge.net
 
-(defparameter ?*output* nil) ; Disabled = nil Enabled = t
+(defparameter ?*output* t) ; Disabled = nil Enabled = t
 
 ;;; Structs
 
@@ -43,19 +43,19 @@
 ;;; Guests
 
 (deffacts guests
-  #S(guest :name n1 :sex m :hobby h3)
-  #S(guest :name n1 :sex m :hobby h2)
-  #S(guest :name n2 :sex m :hobby h1)
-  #S(guest :name n2 :sex m :hobby h2)
-  #S(guest :name n2 :sex m :hobby h3)
-  #S(guest :name n3 :sex f :hobby h3)
-  #S(guest :name n3 :sex f :hobby h2)
-  #S(guest :name n4 :sex f :hobby h1)
-  #S(guest :name n4 :sex f :hobby h2)
-  #S(guest :name n4 :sex f :hobby h3)
-  #S(last_seat :seat 4)
+  #S(context :state start)
   #S(count :c 1)
-  #S(context :state start))
+  #S(last_seat :seat 4)
+  #S(guest :name n4 :sex f :hobby h3)
+  #S(guest :name n4 :sex f :hobby h2)
+  #S(guest :name n4 :sex f :hobby h1)
+  #S(guest :name n3 :sex f :hobby h2)
+  #S(guest :name n3 :sex f :hobby h3)
+  #S(guest :name n2 :sex m :hobby h3)
+  #S(guest :name n2 :sex m :hobby h2)
+  #S(guest :name n2 :sex m :hobby h1)
+  #S(guest :name n1 :sex m :hobby h2)
+  #S(guest :name n1 :sex m :hobby h3))
 
 ;;; Rules
 
@@ -67,6 +67,7 @@
    (assert-facts (make-seating :seat1 1 :name1 ?n :name2 ?n :seat2 1 :id ?c :pid 0 :path_done 'yes)
                  (make-path :id ?c :name ?n :seat 1))
    (modify-fact ?f3 #'(lambda (fact) (setf (count-c fact) (+ ?c 1))))
+   (format ?*output* "seat 1 ~A ~A 1 ~A 0 1" ?n ?n ?c)
    (modify-fact ?f1 #'(lambda (fact) (setf (context-state fact) 'assign_seats))))
 
 (defrule find_seating
