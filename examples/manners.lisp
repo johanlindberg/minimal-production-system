@@ -40,23 +40,6 @@
 (defstruct count 
    c)
 
-;;; Guests
-
-(deffacts guests
-  #S(guest :name n1 :sex m :hobby h3)
-  #S(guest :name n1 :sex m :hobby h2)
-  #S(guest :name n2 :sex m :hobby h1)
-  #S(guest :name n2 :sex m :hobby h2)
-  #S(guest :name n2 :sex m :hobby h3)
-  #S(guest :name n3 :sex f :hobby h3)
-  #S(guest :name n3 :sex f :hobby h2)
-  #S(guest :name n4 :sex f :hobby h1)
-  #S(guest :name n4 :sex f :hobby h2)
-  #S(guest :name n4 :sex f :hobby h3)
-  #S(last_seat :seat 4)
-  #S(count :c 1)
-  #S(context :state start))
-
 ;;; Rules
 
 (defrule assign_first_seat
@@ -67,7 +50,7 @@
    (assert-facts (make-seating :seat1 1 :name1 ?n :name2 ?n :seat2 1 :id ?c :pid 0 :path_done 'yes)
                  (make-path :id ?c :name ?n :seat 1))
    (modify-fact ?f3 #'(lambda (fact) (setf (count-c fact) (+ ?c 1))))
-   (format ?*output* "seat 1 ~A ~A 1 ~A 0 1" ?n ?n ?c)
+   (format ?*output* "~&seat 1 ~A ~A 1 ~A 0 1" ?n ?n ?c)
    (modify-fact ?f1 #'(lambda (fact) (setf (context-state fact) 'assign_seats))))
 
 (defrule find_seating
@@ -83,7 +66,7 @@
    (assert-facts (make-path :id ?c :name ?g2 :seat (+ ?seat2 1)))
    (assert-facts (make-chosen :id ?id :name ?g2 :hobby ?h1))
    (modify-fact ?f5 #'(lambda (fact) (setf (count-c fact) (+ ?c 1))))
-   (format ?*output* "seat ~A ~A ~A" ?seat2 ?n2 ?g2)
+   (format ?*output* "~&seat ~A ~A ~A" ?seat2 ?n2 ?g2)
    (modify-fact ?f1 #'(lambda (fact) (setf (context-state fact) 'make_path))))
 
 (defrule make_path
@@ -107,7 +90,7 @@
    (last_seat (seat ?l_seat))
    (seating (seat2 ?l_seat))
    =>
-   (format ?*output* "~%Yes, we are done!!")
+   (format ?*output* "~&Yes, we are done!!")
    (modify-fact ?f1 #'(lambda (fact) (setf (context-state fact) 'print_results))))
 
 (defrule continue
@@ -123,7 +106,7 @@
    ?f4 <- (path (id ?id) (name ?n) (seat ?s))
    =>
    (retract-facts ?f4)
-   (format ?*output* "~A ~A" ?n ?s))
+   (format ?*output* "~&~A ~A" ?n ?s))
 
 (defrule all_done
    (context (state 'print_results))
@@ -131,4 +114,4 @@
    (halt))
 
 (defun halt ()
-  (format ?*output* "HALT"))
+  (format ?*output* "~&HALT"))

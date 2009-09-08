@@ -1,0 +1,82 @@
+Here's how I've been running the Ms Manners benchmark. MPS is significantly
+slower than CLIPS. Which was expected ;-)
+
+CL-USER> (in-package :mps)
+#<Package "MPS">
+MPS> (load "~/Projects/minimal-production-system/examples/manners.lisp")
+;Compiler warnings :
+;   In RHS/FIND_SEATING: Unused lexical variable ?PID
+;   In RHS/FIND_SEATING: Unused lexical variable ?S2
+ ...
+;   In RHS/PRINT_RESULTS: Unused lexical variable #:G597
+;Compiler warnings :
+;   In RHS/ALL_DONE: Unused lexical variable TOKEN
+#P"/Users/johanlindberg/Projects/minimal-production-system/examples/manners.lisp"
+MPS> (load "~/Projects/minimal-production-system/examples/manners4.lisp")
+#P"/Users/johanlindberg/Projects/minimal-production-system/examples/manners4.lisp"
+MPS> (reset)
+T
+MPS> (time (run))
+
+seat 1 N4 N4 1 1 0 1
+seat 1 N4 N2
+seat 2 N2 N3
+seat 3 N3 N1
+Yes, we are done!!
+N3 3
+N4 1
+N2 2
+N1 4
+HALT
+(RUN) took 187,862 microseconds (0.187862 seconds) to run 
+                    with 2 available CPU cores.
+During that period, 175,660 microseconds (0.175660 seconds) were spent in user mode
+                    3,556 microseconds (0.003556 seconds) were spent in system mode
+2,950 microseconds (0.002950 seconds) was spent in GC.
+ 2,895,744 bytes of memory allocated.
+ 0 minor page faults, 2 major page faults, 0 swaps.
+21
+MPS> (clear)
+T
+MPS> (load "~/Projects/minimal-production-system/examples/manners.lisp")
+;Compiler warnings :
+;   In RHS/FIND_SEATING: Unused lexical variable ?PID
+;   In RHS/FIND_SEATING: Unused lexical variable ?S2
+ ...
+;   In RHS/PRINT_RESULTS: Unused lexical variable #:G3771
+;Compiler warnings :
+;   In RHS/ALL_DONE: Unused lexical variable TOKEN
+#P"/Users/johanlindberg/Projects/minimal-production-system/examples/manners.lisp"
+MPS> (load "~/Projects/minimal-production-system/examples/manners8.lisp")
+#P"/Users/johanlindberg/Projects/minimal-production-system/examples/manners8.lisp"
+MPS> (reset)
+T
+MPS> (time (run))
+
+seat 1 N8 N8 1 1 0 1
+seat 1 N8 N4
+seat 2 N4 N1
+seat 3 N1 N5
+seat 4 N5 N3
+seat 5 N3 N6
+seat 6 N6 N2
+seat 7 N2 N7
+Yes, we are done!!
+N2 7
+N3 5
+N1 3
+N8 1
+N4 2
+N5 4
+N6 6
+N7 8
+HALT
+(RUN) took 975,381 microseconds (0.975381 seconds) to run 
+                    with 2 available CPU cores.
+During that period, 925,696 microseconds (0.925696 seconds) were spent in user mode
+                    18,876 microseconds (0.018876 seconds) were spent in system mode
+14,129 microseconds (0.014129 seconds) was spent in GC.
+ 16,518,032 bytes of memory allocated.
+ 0 minor page faults, 2 major page faults, 0 swaps.
+59
+MPS> 
