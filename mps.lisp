@@ -31,8 +31,8 @@
 ;;; Watch parameters
 (defparameter *activations* nil)
 (defparameter *compilations* nil) ; TBD
-(defparameter *facts* t)
-(defparameter *rules* t)
+(defparameter *facts* nil)
+(defparameter *rules* nil)
 (defparameter *statistics* nil) ; TBD
 
 ;;; Compilation globals
