@@ -86,7 +86,7 @@
   ;; Public API
   (defun agenda ()
     "Returns the current agenda and the number of activations on it."
-    (let ((conflict-set (flatten (get-conflict-set))))
+    (let ((conflict-set (nreverse (flatten (get-conflict-set)))))
 
       (values (funcall conflict-resolution-strategy conflict-set)
 	      (length conflict-set))))
