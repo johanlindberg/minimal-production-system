@@ -11,11 +11,12 @@
 	   :modify-fact
 	   :reset
 	   :retract-facts
-	   :run))
+	   :run
+           :watch
+           :unwatch))
 (in-package :mps)
 
-(defstruct activation
-  rule salience token timestamp rhs-function production-memory)
+(defstruct activation rule salience token timestamp rhs-function production-memory)
 
 ;;; Debug parameters
 (defparameter *print-generated-code* nil)
@@ -243,6 +244,19 @@
 	(funcall (activation-rhs-function activation) activation)
 	(store-activation '- activation (activation-production-memory activation)))))
 
+  (defmacro watch (&rest flags)
+    "Watch"
+    `(progn
+       ,@(mapcar #'(lambda (flag)
+                     `(setf ,(make-sym "*" flag "*") t))
+                 flags)))
+      
+  (defmacro unwatch (&rest flags)
+    "Unwatch"
+    `(progn
+       ,@(mapcar #'(lambda (flag)
+                     `(setf ,(make-sym "*" flag "*") nil))
+                 flags)))
 
   ; Conditional element macros
   (defmacro exists (&rest conditional-elements)
