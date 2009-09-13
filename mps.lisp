@@ -1,4 +1,18 @@
 ;;; Minimal Production System (MPS)
+;;; Copyright (C) 2008-2009 Johan Lindberg, Pulp Software
+
+;;; This program is free software: you can redistribute it and/or modify
+;;; it under the terms of the GNU General Public License as published by
+;;; the Free Software Foundation, either version 3 of the License, or
+;;; (at your option) any later version.
+
+;;; This program is distributed in the hope that it will be useful,
+;;; but WITHOUT ANY WARRANTY; without even the implied warranty of
+;;; MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+;;; GNU General Public License for more details.
+
+;;; You should have received a copy of the GNU General Public License
+;;; along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 (defpackage :mps
   (:use :common-lisp)
@@ -16,11 +30,14 @@
            :unwatch))
 (in-package :mps)
 
-(defstruct activation rule salience token timestamp rhs-function production-memory)
+(defstruct activation
+  rule
+  salience
+  token
+  timestamp
+  rhs-function
+  production-memory)
 
-;;; Debug parameters
-(defparameter *print-generated-code* nil)
-(defparameter *trace-generated-code* nil)
 (declaim (optimize (speed 0)
 		   (space 0)
 		   (debug 3)))
@@ -35,6 +52,10 @@
 (defparameter *facts* nil)
 (defparameter *rules* nil)
 (defparameter *statistics* nil) ; TBD
+
+;;; Debug parameters
+(defparameter *code* nil) ; Print all generated code
+(defparameter *trace* nil) ; Trace all generated code
 
 ;;; Compilation globals
 (defparameter *variable-bindings* (make-hash-table))
@@ -270,14 +291,14 @@
   (defun add-to-production-nodes (node)
     "Adds <node> to the list of production nodes."
     (let ((production-memory (make-sym "MEMORY/" node)))
-      (format *print-generated-code* "~&(ADD-TO-PRODUCTION-NODES :NODE ~S)~%" node)
+      (format *code* "~&(ADD-TO-PRODUCTION-NODES :NODE ~S)~%" node)
       (if (gethash 'production-nodes rete-network)
 	  (push production-memory (gethash 'production-nodes rete-network))
 	  (setf (gethash 'production-nodes rete-network) (list production-memory)))))
 
   (defun add-to-root (type node)
     "Adds <node> as a successor to the type-node for <type>."
-    (format *print-generated-code* "~&(ADD-TO-ROOT :TYPE ~S :NODE ~S)~%" type node)
+    (format *code* "~&(ADD-TO-ROOT :TYPE ~S :NODE ~S)~%" type node)
     (if (gethash type root-node)
 	(push node (gethash type root-node))
 	(setf (gethash type root-node) (list node))))
@@ -298,7 +319,7 @@
 
   (defun connect-nodes (from to)
     "Connects <from> with <to> in the Rete Network."
-    (format *print-generated-code* "~&(CONNECT-NODES :FROM ~S :TO ~S)~%" from to)
+    (format *code* "~&(CONNECT-NODES :FROM ~S :TO ~S)~%" from to)
     (if (gethash from rete-network)
 	(push to (gethash from rete-network))
 	(setf (gethash from rete-network) (list to))))
@@ -313,7 +334,7 @@
 
   (defun propagate (key token timestamp from)
     "Propagates <token> (with <key> and <timestamp>) to all nodes that are connected to <from>."
-    (format *trace-generated-code* "~&(PROPAGATE :KEY ~S :TOKEN ~S :TIMESTAMP ~S :FROM ~S)~%" key token timestamp from)
+    (format *trace* "~&(PROPAGATE :KEY ~S :TOKEN ~S :TIMESTAMP ~S :FROM ~S)~%" key token timestamp from)
     (mapcar #'(lambda (node)
 		(funcall node key token timestamp))
 	    (gethash from rete-network)))
@@ -328,7 +349,7 @@
 
   (defun store-activation (key activation memory)
     "Adds <activation> to (if <key> is '+) or removes from (if <key> is '-) <memory>."
-    (format *trace-generated-code* "~&(STORE-ACTIVATION :KEY ~S :ACTIVATION ~S :MEMORY ~S)~%" key activation memory)
+    (format *trace* "~&(STORE-ACTIVATION :KEY ~S :ACTIVATION ~S :MEMORY ~S)~%" key activation memory)
     (if (eq key '+)
 	;; Add activation
 	(if (gethash memory rete-network)
@@ -345,7 +366,7 @@
 
   (defun update-count (key token count-memory)
     "Increments (if <key> is '+) or decrements (if <key> is '-) <count-memory> for <token>."
-    (format *trace-generated-code* "~&(UPDATE-COUNT :KEY ~S :TOKEN ~S :COUNT-MEMORY ~S)" key token count-memory)
+    (format *trace* "~&(UPDATE-COUNT :KEY ~S :TOKEN ~S :COUNT-MEMORY ~S)" key token count-memory)
     (unless (gethash count-memory rete-network)
       (setf (gethash count-memory rete-network) (make-hash-table :test #'equalp)))
     (let ((old-count (gethash token (gethash count-memory rete-network)))
@@ -356,7 +377,7 @@
 
   (defun store (key token memory)
     "Adds <token> to (if <key> is '+) or removes from (if <key> is '-) <memory>."
-    (format *trace-generated-code* "~&(STORE :KEY ~S :TOKEN ~S :MEMORY ~S)~%" key token memory)
+    (format *trace* "~&(STORE :KEY ~S :TOKEN ~S :MEMORY ~S)~%" key token memory)
     (if (eq key '+)
 	;; Add token
 	(if (gethash memory rete-network)
@@ -466,7 +487,7 @@
                 (make-node-with-symbol-constraint rule-name defstruct-name slot-name slot-binding slot-constraint variable position accessible)
                 (make-node-with-literal-constraint rule-name defstruct-name slot-name slot-constraint position))
 	  (let ((*print-pretty* t))
-	    (format *print-generated-code* "~&~S~%" alpha-node))
+	    (format *code* "~&~S~%" alpha-node))
 	  (eval alpha-node)
 	  (if prev-node
               (connect-nodes prev-node alpha-node-name)
@@ -494,14 +515,14 @@
 			`(let ((left-memory  ',(make-sym "MEMORY/" left-node))
 			       (right-memory ',(make-sym "MEMORY/" right-node)))
 			   (defun ,left-activate (key token timestamp)
-			     (format *trace-generated-code* "~&(~A :KEY ~S :TOKEN ~S :TIMESTAMP ~S)~%" ',left-activate key token timestamp)
+			     (format *trace* "~&(~A :KEY ~S :TOKEN ~S :TIMESTAMP ~S)~%" ',left-activate key token timestamp)
 			     (dolist (fact (contents-of right-memory))
 			       (let ((tok (append token (list fact))))
 				 (when (and ,@(make-binding-test position) ,@(expand-variables-token deferred-tests))
 				   (store key tok ',(make-sym "MEMORY/" beta-node-name))
 				   (propagate key tok timestamp ',beta-node-name)))))
 			   (defun ,right-activate (key fact timestamp)
-			     (format *trace-generated-code* "~&(~A :KEY ~S :FACT ~S :TIMESTAMP ~S)~%" ',right-activate key fact timestamp)
+			     (format *trace* "~&(~A :KEY ~S :FACT ~S :TIMESTAMP ~S)~%" ',right-activate key fact timestamp)
 			     (dolist (token (contents-of left-memory))
 			       (let ((tok (append token (list fact))))
 				 (when (and ,@(make-binding-test position) ,@(expand-variables-token deferred-tests))
@@ -509,11 +530,11 @@
 				   (propagate key tok timestamp ',beta-node-name))))))
 			;; Left-input adapter
 			`(defun ,right-activate (key fact timestamp)
-			   (format *trace-generated-code* "~&(~A :KEY ~S :FACT ~S :TIMESTAMP ~S)~%" ',right-activate key fact timestamp)
+			   (format *trace* "~&(~A :KEY ~S :FACT ~S :TIMESTAMP ~S)~%" ',right-activate key fact timestamp)
 			   (store key (list fact) ',(make-sym "MEMORY/" beta-node-name))
 			   (propagate key (list fact) timestamp ',beta-node-name)))))
     (let ((*print-pretty* t))
-      (format *print-generated-code* "~&~S~%" beta-node))
+      (format *code* "~&~S~%" beta-node))
     (eval beta-node)
     (unless (eq position 0)
       (connect-nodes left-node left-activate))
@@ -528,7 +549,7 @@
 	 (not-node `(let ((left-memory ',(make-sym "MEMORY/" left-node))
 			  (right-memory ',(make-sym "MEMORY/" right-node)))
 		      (defun ,left-activate (key token timestamp)
-			(format *trace-generated-code* "~&(~A :KEY ~S :TOKEN ~S :TIMESTAMP ~S)~%" ',left-activate key token timestamp)
+			(format *trace* "~&(~A :KEY ~S :TOKEN ~S :TIMESTAMP ~S)~%" ',left-activate key token timestamp)
 			(if (eq (length (contents-of right-memory)) 0)
 			    (let ((tok (append token (list nil))))
 			      (store key tok ',(make-sym "MEMORY/" not-node-name))
@@ -543,7 +564,7 @@
                                   (store key tok ',(make-sym "MEMORY/" not-node-name))
                                   (propagate key tok timestamp ',not-node-name))))))
 		      (defun ,right-activate (key fact timestamp)
-			(format *trace-generated-code* "~&(~A :KEY ~S :FACT ~S :TIMESTAMP ~S)~%" ',right-activate key fact timestamp)
+			(format *trace* "~&(~A :KEY ~S :FACT ~S :TIMESTAMP ~S)~%" ',right-activate key fact timestamp)
 			(dolist (token (contents-of left-memory))
 			  (let ((tok (append token (list fact)))
                                 (ptok (append token (list nil))))
@@ -561,7 +582,7 @@
 					    (eq key '+))
 				       (propagate '- ptok timestamp ',not-node-name)))))))))))
     (let ((*print-pretty* t))
-      (format *print-generated-code* "~&~S~%" not-node))
+      (format *code* "~&~S~%" not-node))
     (eval not-node)
     (connect-nodes left-node left-activate)
     (setf (gethash position *nodes*) not-node-name)))
@@ -579,14 +600,14 @@
 
     (let ((test-node
 	   `(defun ,test-node-name (key token timestamp)
-	      (format *trace-generated-code* "~&(~A :KEY ~S :TOKEN ~S :TIMESTAMP ~S)~%" ',test-node-name key token timestamp)
+	      (format *trace* "~&(~A :KEY ~S :TOKEN ~S :TIMESTAMP ~S)~%" ',test-node-name key token timestamp)
 	      (let* (,@list-of-fact-bindings
 		     ,@list-of-variable-bindings)
 		(when ,test-form
 		  (store key token ',(make-sym "MEMORY/" test-node-name))
 		  (propagate key token timestamp ',test-node-name))))))
       (let ((*print-pretty* t))
-	(format *print-generated-code* "~&~S~%" test-node))
+	(format *code* "~&~S~%" test-node))
       (eval test-node))
     test-node-name))
 
@@ -609,7 +630,7 @@
   (let* ((production-node-name (make-sym "PRODUCTION/" rule-name))
 	 (production-memory (make-sym "MEMORY/PRODUCTION/" rule-name))
 	 (production-node `(defun ,production-node-name (key token timestamp)
-			     (format *trace-generated-code* "~&(~A :KEY ~S :TOKEN ~S :TIMESTAMP ~S)~%" ',production-node-name key token timestamp)
+			     (format *trace* "~&(~A :KEY ~S :TOKEN ~S :TIMESTAMP ~S)~%" ',production-node-name key token timestamp)
 			     (if (eq key '+)
 				 (format *activations* "~&=> ACTIVATION: ~A ~S~%" ',rule-name token)
 				 (format *activations* "~&<= ACTIVATION: ~A ~S~%" ',rule-name token))
@@ -621,7 +642,7 @@
 								    :production-memory ',production-memory)
 					       ',production-memory))))
     (let ((*print-pretty* t))
-      (format *print-generated-code* "~&~S~%" production-node))
+      (format *code* "~&~S~%" production-node))
     (eval production-node)
     (connect-nodes (gethash (- (hash-table-count *nodes*) 1) *nodes*) production-node-name)
     (add-to-production-nodes production-node-name)))
@@ -630,7 +651,7 @@
   (let ((node-name (make-sym "ALPHA/" rule-name "-" (format nil "~A" position) "/" defstruct-name "-" slot-name)))
     (values
      `(defun ,node-name (key fact timestamp)
-	(format *trace-generated-code* "~&(~A :KEY ~S :FACT ~S :TIMESTAMP ~S)~%" ',node-name key fact timestamp)
+	(format *trace* "~&(~A :KEY ~S :FACT ~S :TIMESTAMP ~S)~%" ',node-name key fact timestamp)
 	(when (equalp (,(make-sym defstruct-name "-" slot-name) fact) ,slot-constraint)
 	  (store key fact ',(make-sym "MEMORY/" node-name))
 	  (propagate key fact timestamp ',node-name)))
@@ -649,7 +670,7 @@
                            (t nil))))
     (values
      `(defun ,node-name (key fact timestamp)
-	(format *trace-generated-code* "~&(~A :KEY ~S :FACT ~S :TIMESTAMP ~S)~%" ',node-name key fact timestamp)
+	(format *trace* "~&(~A :KEY ~S :FACT ~S :TIMESTAMP ~S)~%" ',node-name key fact timestamp)
 	(when ,constraint
 	  (store key fact ',(make-sym "MEMORY/" node-name))
 	  (propagate key fact timestamp ',node-name)))
@@ -719,11 +740,11 @@
 	     *variable-bindings*)
     (let* ((rhs-function-name (make-sym "RHS/" rule-name))
 	   (rhs-function `(defun ,rhs-function-name (activation)
-			    (format *trace-generated-code* "~&(~A :ACTIVATION ~S)~%" ',rhs-function-name activation)
+			    (format *trace* "~&(~A :ACTIVATION ~S)~%" ',rhs-function-name activation)
 			    (let* ((token (activation-token activation))
 				   ,@list-of-fact-bindings
 				   ,@list-of-variable-bindings)
 			      ,@rhs))))
       (let ((*print-pretty* t))
-	(format *print-generated-code* "~&~S~%" rhs-function))
+	(format *code* "~&~S~%" rhs-function))
       rhs-function)))
