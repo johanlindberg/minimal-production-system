@@ -105,11 +105,9 @@
        (current-fact-index 0)
        (current-timestamp 0))
 
-  ;; Public API
   (defun agenda ()
     "Returns the current agenda and the number of activations on it."
     (let ((conflict-set (nreverse (flatten (get-conflict-set)))))
-
       (values (funcall conflict-resolution-strategy conflict-set)
 	      (length conflict-set))))
 
@@ -140,15 +138,15 @@
   (defun clear ()
     "Clears the engine. NOTE! clear does NOT remove defstructs."
     (clrhash rete-network)
-    (clrhash working-memory)
-    (clrhash *nodes*)
-
-    (setf *defrules* '())
-    (clrhash *deffacts*)
-
     (setf root-node (setf (gethash 'root rete-network) (make-hash-table)))
+
+    (clrhash working-memory)
     (setf current-fact-index 0)
     (setf current-timestamp 0)
+
+    (setf *defrules* '())
+    (clrhash *nodes*)
+    (clrhash *deffacts*)
 
     t)
 
@@ -165,7 +163,6 @@
 		   (when (numberp key)
 		     (push value result)))
 	     working-memory)
-
       result))
 
   (defun token-to-string (token)
@@ -216,7 +213,7 @@
     "Modifies a <fact> in Working Memory as specified in <modifier-fn>.
 
      <modifier-fn> needs to be a function that takes one argument (fact)."
-    (let ((temp-reference (gensym))) 
+    (let ((temp-reference (gensym)))
       `(let ((,temp-reference ,fact))
          (retract-facts ,temp-reference)
          (funcall ,modifier-fn ,fact)
@@ -231,7 +228,6 @@
                  (declare (ignore name))
                  (apply #'assert-facts fact-list))
              *deffacts*)
-    
     t)
 
   (defun retract-facts (&rest fact-list)
@@ -250,7 +246,6 @@
 	    (mapcar #'(lambda (node)
 			(funcall node '- fact current-timestamp))
 		    (gethash (type-of fact) (gethash 'root rete-network))))))
-
       count))
 
   (defun run (&optional (limit -1))
@@ -441,7 +436,7 @@
 	  (format t "A Not-CE cannot contain more than one Pattern-CE!") ; TBD!
 	  `(let ((not-node '()))
              (multiple-value-bind (alpha-node deferred-tests)
-                 (make-alpha-nodes ',rule-name ',(caadr conditional-element) ',(cadr conditional-element) nil ,position nil)
+                 (make-alpha-node ',rule-name ',(caadr conditional-element) ',(cadr conditional-element) nil ,position nil)
                (setf (gethash ,position *nodes*) alpha-node) ; TBD! This should be done differently!?
                (setf not-node (make-single-not-node ',rule-name ,position deferred-tests))
                (connect-nodes alpha-node (make-sym not-node "-right")))))))
@@ -460,14 +455,15 @@
        (unless ,(null variable)
 	 (setf (gethash ',variable *fact-bindings*) ,position))
        (multiple-value-bind (alpha-node deferred-tests)
-           (make-alpha-nodes ',rule-name ',defstruct-name ',conditional-element ',variable ,position t)
+           (make-alpha-node ',rule-name ',defstruct-name ',conditional-element ',variable ,position t)
          (setf (gethash ,position *nodes*) alpha-node) ; TBD! This should be done differently!?
          (setf beta-node (make-beta-node ',rule-name ,position deferred-tests))
          (connect-nodes alpha-node (make-sym beta-node "-right"))))))
 
-(defun make-alpha-nodes (rule-name defstruct-name conditional-element variable position accessible)
+(defun make-alpha-node (rule-name defstruct-name conditional-element variable position accessible)
   (let ((prev-node '())
-        (deferred-tests '()))
+        (deferred-tests '())
+        (tests '()))
     (dolist (slot (cdr conditional-element))
       (let* ((slot-name (car slot))
 	     (slot-binding (if (variable-p (cadr slot))
@@ -480,20 +476,40 @@
           (push slot-constraint deferred-tests)
           (setq slot-constraint '()))
 
-	(multiple-value-bind (alpha-node alpha-node-name)
-            (if (or (and (consp slot-constraint)
-                         (not (equalp (car slot-constraint) 'quote)))
-                    (symbolp slot-constraint))
-                (make-node-with-symbol-constraint rule-name defstruct-name slot-name slot-binding slot-constraint variable position accessible)
-                (make-node-with-literal-constraint rule-name defstruct-name slot-name slot-constraint position))
-	  (let ((*print-pretty* t))
-	    (format *code* "~&~S~%" alpha-node))
-	  (eval alpha-node)
-	  (if prev-node
-              (connect-nodes prev-node alpha-node-name)
-	      (add-to-root defstruct-name alpha-node-name))
-	  (setf prev-node alpha-node-name))))
+	(push (if (or (and (consp slot-constraint)
+                           (not (equalp (car slot-constraint) 'quote)))
+                      (symbolp slot-constraint))
+                  (make-symbol-constraint defstruct-name slot-name slot-binding slot-constraint variable position accessible)
+                  (make-literal-constraint defstruct-name slot-name slot-constraint))
+              tests)))
+    (let* ((alpha-node-name (make-sym "ALPHA/" rule-name "-" (format nil "~A" position) "/" defstruct-name))
+           (alpha-node `(defun ,alpha-node-name (key fact timestamp)
+                          (format *trace* "~&(~A :KEY ~S :FACT ~S :TIMESTAMP ~S)~%" ',alpha-node-name key fact timestamp)
+                          (when (and ,@tests)
+                            (store key fact ',(make-sym "MEMORY/" alpha-node-name))
+                            (propagate key fact timestamp ',alpha-node-name)))))
+      (let ((*print-pretty* t))
+        (format *code* "~&~S~%" alpha-node))
+      (eval alpha-node)
+      (if prev-node
+          (connect-nodes prev-node alpha-node-name)
+          (add-to-root defstruct-name alpha-node-name))
+      (setf prev-node alpha-node-name))
     (values prev-node deferred-tests)))
+      
+(defun make-literal-constraint (defstruct-name slot-name slot-constraint)
+  `(equalp (,(make-sym defstruct-name "-" slot-name) fact) ,slot-constraint))
+
+(defun make-symbol-constraint (defstruct-name slot-name slot-binding slot-constraint variable position accessible)
+  (let* ((slot-accessor (make-sym defstruct-name "-" slot-name))
+         (binding-constraint (parse-binding-constraint slot-binding slot-constraint slot-accessor variable position accessible)))
+    (cond ((and binding-constraint slot-constraint)
+           `(and ,binding-constraint ,(expand-variables slot-constraint)))
+          (binding-constraint
+           binding-constraint)
+          (slot-constraint
+           (expand-variables slot-constraint))
+          (t nil))))
 
 (defun defer? (var constraint)
   (when var
@@ -646,35 +662,6 @@
     (eval production-node)
     (connect-nodes (gethash (- (hash-table-count *nodes*) 1) *nodes*) production-node-name)
     (add-to-production-nodes production-node-name)))
-
-(defun make-node-with-literal-constraint (rule-name defstruct-name slot-name slot-constraint position)
-  (let ((node-name (make-sym "ALPHA/" rule-name "-" (format nil "~A" position) "/" defstruct-name "-" slot-name)))
-    (values
-     `(defun ,node-name (key fact timestamp)
-	(format *trace* "~&(~A :KEY ~S :FACT ~S :TIMESTAMP ~S)~%" ',node-name key fact timestamp)
-	(when (equalp (,(make-sym defstruct-name "-" slot-name) fact) ,slot-constraint)
-	  (store key fact ',(make-sym "MEMORY/" node-name))
-	  (propagate key fact timestamp ',node-name)))
-     node-name)))
-
-(defun make-node-with-symbol-constraint (rule-name defstruct-name slot-name slot-binding slot-constraint variable position accessible)
-  (let* ((node-name (make-sym "ALPHA/" rule-name "-" (format nil "~A" position) "/" defstruct-name "-" slot-name))
-	 (slot-accessor (make-sym defstruct-name "-" slot-name))
-	 (binding-constraint (parse-binding-constraint slot-binding slot-constraint slot-accessor variable position accessible))
-         (constraint (cond ((and binding-constraint slot-constraint)
-                            `(and ,binding-constraint ,(expand-variables slot-constraint)))
-                           (binding-constraint
-                            binding-constraint)
-                           (slot-constraint
-                            (expand-variables slot-constraint))
-                           (t nil))))
-    (values
-     `(defun ,node-name (key fact timestamp)
-	(format *trace* "~&(~A :KEY ~S :FACT ~S :TIMESTAMP ~S)~%" ',node-name key fact timestamp)
-	(when ,constraint
-	  (store key fact ',(make-sym "MEMORY/" node-name))
-	  (propagate key fact timestamp ',node-name)))
-     node-name)))
 
 (defun parse-binding-constraint (slot-binding slot-constraint slot-accessor variable position accessible)
   (let ((fact-variable (if variable
