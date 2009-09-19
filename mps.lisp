@@ -21,7 +21,10 @@
 	   :clear
            :deffacts
 	   :defrule
+           :depth
 	   :facts
+           :halt
+           :matches
 	   :modify-fact
 	   :reset
 	   :retract-facts
@@ -248,17 +251,23 @@
 		    (gethash (type-of fact) (gethash 'root rete-network))))))
       count))
 
-  (defun run (&optional (limit -1))
-    "Run"
-    (do* ((curr-agenda (agenda) (agenda))
-	  (execution-count 0 (+ execution-count 1))
-	  (limit limit (- limit 1)))
-	 ((or (eq limit 0)
-	      (eq (length curr-agenda) 0)) execution-count)
-      (let ((activation (first curr-agenda)))
-	(format *rules* "~&FIRE: ~A ~S~%" (activation-rule activation) (activation-token activation))
-	(funcall (activation-rhs-function activation) activation)
-	(store-activation '- activation (activation-production-memory activation)))))
+  (let ((limit -1))
+    (defun run (&optional (n -1))
+      "Run"
+      (setf limit n)
+      (do* ((curr-agenda (agenda) (agenda))
+            (execution-count 0 (+ execution-count 1)))
+           ((or (eq limit 0)
+                (eq (length curr-agenda) 0)) execution-count)
+        (decf limit)
+        (let ((activation (first curr-agenda)))
+          (format *rules* "~&FIRE: ~A ~S~%" (activation-rule activation) (activation-token activation))
+          (funcall (activation-rhs-function activation) activation)
+          (store-activation '- activation (activation-production-memory activation)))))
+
+    (defun halt ()
+      "Halt"
+      (setf limit 0)))
 
   (defmacro watch (&rest flags)
     "Watch"
