@@ -15,93 +15,102 @@ are lies! See http://commentsarelies.blogspot.com/search/label/MPS
 
 Current Status
 --------------
-Currently (2009-07-19) MPS can compile very simple (and some, not so, simple)
-rules and execute them. The Not-CE can still only handle one Pattern-CE but I'm
-working on that. I'm currently writing tests for all features (see /tests) and
-I'm also trying to get the Ms Manners benchmark running (see /examples).
+Currently (2009-09-19) MPS has a small (but growing) set of feature tests (see
+/tests) and works, more or less, as it should. The Not-CE can still only handle
+one Pattern-CE. I'll try to fix that during autumn. I'm also working on making
+MPS ASDF-installable.
 
 Simplest example possible
 -------------------------
 CL-USER> (in-package :mps)
 #<Package "MPS">
-MPS> (setf generated-code t)
+MPS> (watch activations code facts rules)
 T
-MPS> (defstruct a b)
-A
-MPS> (defstruct b c)
-B
-MPS> (defrule ab
-       (a (b ?value))
-       (b (c ?value))
+MPS> (defstruct foo value)
+FOO
+MPS> (defrule test
+       (foo (value ?value))
        =>
-       (print ?value))
-
-(DEFUN ALPHA/AB-0/A-B (KEY FACT TIMESTAMP)
-  (PRINT (LIST 'ALPHA/AB-0/A-B :KEY KEY :FACT FACT :TIMESTAMP TIMESTAMP))
-  (WHEN T
-    (STORE KEY FACT 'MEMORY/ALPHA/AB-0/A-B)
-    (PROPAGATE KEY FACT TIMESTAMP 'ALPHA/AB-0/A-B)))
-(ADD-TO-ROOT :TYPE A :NODE ALPHA/AB-0/A-B) 
-(DEFUN BETA/AB-0-RIGHT (KEY FACT TIMESTAMP)
-  (PRINT (LIST 'BETA/AB-0-RIGHT :KEY KEY :FACT FACT :TIMESTAMP TIMESTAMP))
-  (STORE KEY (LIST FACT) 'MEMORY/BETA/AB-0)
-  (PROPAGATE KEY (LIST FACT) TIMESTAMP 'BETA/AB-0))
-(CONNECT-NODES :FROM ALPHA/AB-0/A-B :TO BETA/AB-0-RIGHT) 
-(DEFUN ALPHA/AB-1/B-C (KEY FACT TIMESTAMP)
-  (PRINT (LIST 'ALPHA/AB-1/B-C :KEY KEY :FACT FACT :TIMESTAMP TIMESTAMP))
-  (WHEN T
-    (STORE KEY FACT 'MEMORY/ALPHA/AB-1/B-C)
-    (PROPAGATE KEY FACT TIMESTAMP 'ALPHA/AB-1/B-C)))
-(ADD-TO-ROOT :TYPE B :NODE ALPHA/AB-1/B-C) 
-(LET ((LEFT-MEMORY 'MEMORY/BETA/AB-0) (RIGHT-MEMORY 'MEMORY/ALPHA/AB-1/B-C))
-  (DEFUN BETA/AB-1-LEFT (KEY TOKEN TIMESTAMP)
-    (PRINT (LIST 'BETA/AB-1-LEFT :KEY KEY :TOKEN TOKEN :TIMESTAMP TIMESTAMP))
-    (DOLIST (FACT (CONTENTS-OF RIGHT-MEMORY))
-      (LET ((TOK (APPEND TOKEN (LIST FACT))))
-        (WHEN (AND (EQUAL (B-C (NTH 1 TOK)) (A-B (NTH 0 TOK))) T)
-          (STORE KEY TOK 'MEMORY/BETA/AB-1)
-          (PROPAGATE KEY TOK TIMESTAMP 'BETA/AB-1)))))
-  (DEFUN BETA/AB-1-RIGHT (KEY FACT TIMESTAMP)
-    (PRINT (LIST 'BETA/AB-1-RIGHT :KEY KEY :FACT FACT :TIMESTAMP TIMESTAMP))
-    (DOLIST (TOKEN (CONTENTS-OF LEFT-MEMORY))
-      (LET ((TOK (APPEND TOKEN (LIST FACT))))
-        (WHEN (AND (EQUAL (B-C (NTH 1 TOK)) (A-B (NTH 0 TOK))) T)
-          (STORE KEY TOK 'MEMORY/BETA/AB-1)
-          (PROPAGATE KEY TOK TIMESTAMP 'BETA/AB-1))))))
-(CONNECT-NODES :FROM BETA/AB-0 :TO BETA/AB-1-LEFT) 
-(CONNECT-NODES :FROM ALPHA/AB-1/B-C :TO BETA/AB-1-RIGHT) 
-(DEFUN RHS/AB (ACTIVATION)
-  (PRINT (LIST 'RHS/AB ACTIVATION))
+       (print ?value)
+       (halt))
+(DEFUN ALPHA/TEST-0/FOO (KEY FACT TIMESTAMP)
+  (FORMAT *TRACE*
+          "~&(~A :KEY ~S :FACT ~S :TIMESTAMP ~S)~%"
+          'ALPHA/TEST-0/FOO
+          KEY
+          FACT
+          TIMESTAMP)
+  (WHEN (AND T)
+    (STORE KEY FACT 'MEMORY/ALPHA/TEST-0/FOO)
+    (PROPAGATE KEY FACT TIMESTAMP 'ALPHA/TEST-0/FOO)))
+(ADD-TO-ROOT :TYPE FOO :NODE ALPHA/TEST-0/FOO)
+(DEFUN BETA/TEST-0-RIGHT (KEY FACT TIMESTAMP)
+  (FORMAT *TRACE*
+          "~&(~A :KEY ~S :FACT ~S :TIMESTAMP ~S)~%"
+          'BETA/TEST-0-RIGHT
+          KEY
+          FACT
+          TIMESTAMP)
+  (STORE KEY (LIST FACT) 'MEMORY/BETA/TEST-0)
+  (PROPAGATE KEY (LIST FACT) TIMESTAMP 'BETA/TEST-0))
+(CONNECT-NODES :FROM ALPHA/TEST-0/FOO :TO BETA/TEST-0-RIGHT)
+(DEFUN RHS/TEST (ACTIVATION)
+  (FORMAT *TRACE* "~&(~A :ACTIVATION ~S)~%" 'RHS/TEST ACTIVATION)
   (LET* ((TOKEN (ACTIVATION-TOKEN ACTIVATION))
-         (#:G38 (NTH 0 TOKEN))
-         (#:G41 (NTH 1 TOKEN))
-         (?VALUE (A-B #:G38)))
-    (PRINT ?VALUE)))
-;Compiler warnings :
-;   In RHS/AB: Unused lexical variable #:G41
-(DEFUN PRODUCTION/AB (KEY TOKEN TIMESTAMP)
-  (PRINT (LIST 'PRODUCTION/AB :KEY KEY :TOKEN TOKEN :TIMESTAMP TIMESTAMP))
-  (STORE KEY
-         (MAKE-ACTIVATION
-           :RULE
-           'AB
-           :SALIENCE
-           0
-           :TOKEN
-           TOKEN
-           :TIMESTAMP
-           TIMESTAMP
-           :RHS-FUNC
-           #'RHS/AB
-           :PROD-MEM
-           'MEMORY/PRODUCTION/AB)
-         'MEMORY/PRODUCTION/AB))
-(CONNECT-NODES :FROM BETA/AB-1 :TO PRODUCTION/AB) 
-(ADD-TO-PRODUCTION-NODES :NODE PRODUCTION/AB) AB
-MPS> (assert-facts #S(a :b 1) #S(a :b 2) #S(b :c 2))
+         (#:G874 (NTH 0 TOKEN))
+         (?VALUE (FOO-VALUE #:G874)))
+    (PRINT ?VALUE)
+    (HALT)))
+(DEFUN PRODUCTION/TEST (KEY TOKEN TIMESTAMP)
+  (FORMAT *TRACE*
+          "~&(~A :KEY ~S :TOKEN ~S :TIMESTAMP ~S)~%"
+          'PRODUCTION/TEST
+          KEY
+          TOKEN
+          TIMESTAMP)
+  (IF (EQ KEY '+)
+      (FORMAT *ACTIVATIONS* "~&=> ACTIVATION: ~A ~S~%" 'TEST TOKEN)
+      (FORMAT *ACTIVATIONS* "~&<= ACTIVATION: ~A ~S~%" 'TEST TOKEN))
+  (STORE-ACTIVATION
+    KEY
+    (MAKE-ACTIVATION
+      :RULE
+      'TEST
+      :SALIENCE
+      0
+      :TOKEN
+      TOKEN
+      :TIMESTAMP
+      TIMESTAMP
+      :RHS-FUNCTION
+      #'RHS/TEST
+      :PRODUCTION-MEMORY
+      'MEMORY/PRODUCTION/TEST)
+    'MEMORY/PRODUCTION/TEST))
+(CONNECT-NODES :FROM BETA/TEST-0 :TO PRODUCTION/TEST)
+(ADD-TO-PRODUCTION-NODES :NODE PRODUCTION/TEST)
+TEST
+MPS> (assert-facts #S(foo :value 1) #S(foo :value 2) #S(foo :value 3))
+=> FACT: F-1 #S(FOO :VALUE 1)
+=> ACTIVATION: TEST (#S(FOO :VALUE 1))
+=> FACT: F-2 #S(FOO :VALUE 2)
+=> ACTIVATION: TEST (#S(FOO :VALUE 2))
+=> FACT: F-3 #S(FOO :VALUE 3)
+=> ACTIVATION: TEST (#S(FOO :VALUE 3))
 3
-MPS> (run)
+MPS> (pprint (agenda))
 
-2
-1
+(#S(ACTIVATION :RULE TEST :SALIENCE 0 :TOKEN (#S(FOO :VALUE 1)) :TIMESTAMP 1
+               :RHS-FUNCTION #<Compiled-function RHS/TEST #x3000413FCB3F>
+               :PRODUCTION-MEMORY MEMORY/PRODUCTION/TEST)
+ #S(ACTIVATION :RULE TEST :SALIENCE 0 :TOKEN (#S(FOO :VALUE 2)) :TIMESTAMP 1
+               :RHS-FUNCTION #<Compiled-function RHS/TEST #x3000413FCB3F>
+               :PRODUCTION-MEMORY MEMORY/PRODUCTION/TEST)
+ #S(ACTIVATION :RULE TEST :SALIENCE 0 :TOKEN (#S(FOO :VALUE 3)) :TIMESTAMP 1
+               :RHS-FUNCTION #<Compiled-function RHS/TEST #x3000413FCB3F>
+               :PRODUCTION-MEMORY MEMORY/PRODUCTION/TEST)); No value
+MPS> (run)
+FIRE: TEST (#S(FOO :VALUE 1))
+
+1 1
 MPS> 
