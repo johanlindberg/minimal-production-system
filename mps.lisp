@@ -162,9 +162,7 @@
       result))
 
   (defun token-to-string (token)
-    (format nil "~{f-~A,~}" (mapcar #'(lambda (fact)
-                                        (get-fact-index-of fact))
-                                    token)))
+    (format nil "~{f-~A,~}" token))
 
   (defun facts-to-indexes (facts)
     (mapcar #'(lambda (fact)
@@ -235,12 +233,12 @@
 	  (setf fact (get-fact-with-index fact)))
 	(when (gethash fact working-memory)
 	  (let ((fact-index (get-fact-index-of fact)))
+            (dolist (node (gethash (type-of fact) (gethash 'root rete-network)))
+              (funcall node '- fact current-timestamp))
 	    (remhash fact-index working-memory)
 	    (remhash fact working-memory)
 	    (format *facts* "~&<= FACT: F-~D ~S~%" fact-index fact)
-	    (incf count)
-            (dolist (node (gethash (type-of fact) (gethash 'root rete-network)))
-              (funcall node '- fact current-timestamp)))))
+	    (incf count))))
 
       count))
 
@@ -535,24 +533,26 @@
 			   (defun ,left-activate (key token timestamp)
 			     (format *trace* "~&(~A :KEY ~S :TOKEN ~S :TIMESTAMP ~S)~%" ',left-activate key token timestamp)
 			     (dolist (fact (contents-of right-memory))
-			       (let ((tok (append token (list fact))))
-				 (when (and ,@(make-binding-test position) ,@(expand-variables-token deferred-tests))
+			       (let ((tok (append token (list (get-fact-index-of fact))))) ; XXX
+				 (when (and ,@(make-binding-test position)
+                                            ,@(expand-variables-token deferred-tests))
 				   (store key tok ',(make-sym "MEMORY/" beta-node-name))
 				   (propagate key tok timestamp ',beta-node-name)))))
 
 			   (defun ,right-activate (key fact timestamp)
 			     (format *trace* "~&(~A :KEY ~S :FACT ~S :TIMESTAMP ~S)~%" ',right-activate key fact timestamp)
 			     (dolist (token (contents-of left-memory))
-			       (let ((tok (append token (list fact))))
-				 (when (and ,@(make-binding-test position) ,@(expand-variables-token deferred-tests))
+			       (let ((tok (append token (list (get-fact-index-of fact))))) ; XXX
+				 (when (and ,@(make-binding-test position)
+                                            ,@(expand-variables-token deferred-tests))
 				   (store key tok ',(make-sym "MEMORY/" beta-node-name))
 				   (propagate key tok timestamp ',beta-node-name))))))
 
 			;; Left-input adapter
 			`(defun ,right-activate (key fact timestamp)
 			   (format *trace* "~&(~A :KEY ~S :FACT ~S :TIMESTAMP ~S)~%" ',right-activate key fact timestamp)
-			   (store key (list fact) ',(make-sym "MEMORY/" beta-node-name))
-			   (propagate key (list fact) timestamp ',beta-node-name)))))
+			   (store key (list (get-fact-index-of fact)) ',(make-sym "MEMORY/" beta-node-name)) ; XXX
+			   (propagate key (list (get-fact-index-of fact)) timestamp ',beta-node-name))))) ; XXX
 
     (let ((*print-pretty* t))
       (format *code* "~&~S~%" beta-node))
@@ -577,8 +577,9 @@
 			      (propagate key tok timestamp ',not-node-name))			    
 			    (let ((propagate-token t))
                               (dolist (fact (contents-of right-memory))
-                                (let ((tok (append token (list fact))))
-                                  (when (and ,@(make-binding-test position) ,@(expand-variables-token deferred-tests))
+                                (let ((tok (append token (list (get-fact-index-of fact))))) ; XXX
+                                  (when (and ,@(make-binding-test position)
+                                             ,@(expand-variables-token deferred-tests))
                                     (setf propagate-token nil))))
                               (when propagate-token
                                 (let ((tok (append token (list nil))))
@@ -588,12 +589,13 @@
 		      (defun ,right-activate (key fact timestamp)
 			(format *trace* "~&(~A :KEY ~S :FACT ~S :TIMESTAMP ~S)~%" ',right-activate key fact timestamp)
 			(dolist (token (contents-of left-memory))
-			  (let ((tok (append token (list fact)))
+			  (let ((tok (append token (list (get-fact-index-of fact)))) ; XXX
                                 (ptok (append token (list nil))))
-			    (when (and ,@(make-binding-test position) ,@(expand-variables-token deferred-tests))
+			    (when (and ,@(make-binding-test position)
+                                       ,@(expand-variables-token deferred-tests))
 			      (multiple-value-bind (new-count old-count)
                                   (update-count key tok ',(make-sym "COUNT-MEMORY/" not-node-name))
-                                (declare (type (fixnum new-count old-count)))
+                                (declare (fixnum new-count old-count))
                                 (store key ptok ',(make-sym "MEMORY/" not-node-name))
 				(cond ((and (eq (the fixnum new-count) 0)
 					    (eq (the fixnum old-count) 1)
@@ -645,7 +647,9 @@
 		     (dolist (b v)
 		       (if (eql position (caddr b))
 			   (when prev
-			     (push `(equalp (,(car b) (nth ,(caddr b) tok)) (,(car prev) (nth ,(caddr prev) tok))) result))
+			     (push `(equalp (,(car b) (get-fact-with-index (nth ,(caddr b) tok))) ; XXX
+                                            (,(car prev) (get-fact-with-index (nth ,(caddr prev) tok)))) ; XXX
+                                   result))
                            (when (cadddr b)
                              (setf prev b)))))))
 	     *variable-bindings*)
@@ -711,7 +715,7 @@
 
 (defun expand-variables-token (form)
   (maphash #'(lambda (key value)
-	       (nsubst `(,(caar value) (nth ,(caddar value) tok)) key form))
+	       (nsubst `(,(caar value) (get-fact-with-index (nth ,(caddar value) tok))) key form)) ; XXX 
 	   *variable-bindings*)
   form)
 
@@ -721,7 +725,7 @@
 
 (defun make-fact-binding (key value)
   ;; variable-name : position
-  `(,key (nth ,value token)))
+  `(,key (get-fact-with-index (nth ,value token)))) ; XXX 
 
 (defmacro compile-rhs (rule-name &rest rhs)
   (let ((list-of-fact-bindings '())

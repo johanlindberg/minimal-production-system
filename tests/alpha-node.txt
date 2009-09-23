@@ -17,7 +17,7 @@ TEST1
 >> (length (agenda))
 1
 >> (activation-token (car (agenda)))
-(#S(FOO :BAR TEST))
+(1)
 >> (reset)
 T
 >> (defrule test2
