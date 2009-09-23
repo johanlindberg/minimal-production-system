@@ -41,13 +41,8 @@
   rhs-function
   production-memory)
 
-(declaim (optimize (speed 0)
-		   (space 0)
-		   (debug 3)))
-
 (defparameter *deffacts* (make-hash-table))
 (defparameter *defrules* '())
-(defparameter *generated-functions* '())
 
 ;;; Watch parameters
 (defparameter *activations* nil)
@@ -129,17 +124,15 @@
             (setf (gethash current-fact-index working-memory) fact-copy)
             (format *facts* "~&=> FACT: F-~D ~S~%" current-fact-index fact-copy)
             (incf count)
-            (mapcar #'(lambda (nodes)
-                        (if (consp nodes)
-                            (dolist (node nodes)
-                              (funcall node '+ fact-copy current-timestamp))
-                            (funcall nodes '+ fact-copy current-timestamp)))
-                    (gethash (type-of fact-copy) (gethash 'root rete-network))))))
-
+            (dolist (nodes (gethash (type-of fact-copy) (gethash 'root rete-network)))
+              (if (consp nodes)
+                  (dolist (node nodes)
+                    (funcall node '+ fact-copy current-timestamp))
+                  (funcall nodes '+ fact-copy current-timestamp))))))
       count))
 
   (defun clear ()
-    "Clears the engine. NOTE! clear does NOT remove defstructs."
+    "Clears the engine."
     (clrhash rete-network)
     (setf root-node (setf (gethash 'root rete-network) (make-hash-table)))
 
@@ -246,9 +239,9 @@
 	    (remhash fact working-memory)
 	    (format *facts* "~&<= FACT: F-~D ~S~%" fact-index fact)
 	    (incf count)
-	    (mapcar #'(lambda (node)
-			(funcall node '- fact current-timestamp))
-		    (gethash (type-of fact) (gethash 'root rete-network))))))
+            (dolist (node (gethash (type-of fact) (gethash 'root rete-network)))
+              (funcall node '- fact current-timestamp)))))
+
       count))
 
   (let ((limit -1))
@@ -395,7 +388,7 @@
 
 (defmacro defrule (name &body body)
   (if (member name *defrules*)
-      (format t "~&Cannot redefine rule: ~A" name)
+      (error "Cannot redefine ~A" name)
       (progn
         (push name *defrules*)
         (setf *nodes* (make-hash-table)
@@ -439,19 +432,19 @@
 
 (defmacro parse-not-ce (rule-name position conditional-element)
   (if (eq position 0)
-      (format t "A Not-CE cannot appear FIRST in a rule!") ; TBD! Raise exception!?
+      (error "Error in ~A~%A Not-CE cannot appear first in a rule!" rule-name)
       (if (> (length (cdr conditional-element)) 1)
-	  (format t "A Not-CE cannot contain more than one Pattern-CE!") ; TBD!
+	  (error "Error in ~A~%A Not-CE cannot contain more than one Pattern-CE!" rule-name) ; TBD!
 	  `(let ((not-node '()))
              (multiple-value-bind (alpha-node deferred-tests)
                  (make-alpha-node ',rule-name ',(caadr conditional-element) ',(cadr conditional-element) nil ,position nil)
-               (setf (gethash ,position *nodes*) alpha-node) ; TBD! This should be done differently!?
+               (setf (gethash ,position *nodes*) alpha-node)
                (setf not-node (make-single-not-node ',rule-name ,position deferred-tests))
                (connect-nodes alpha-node (make-sym not-node "-right")))))))
 
 (defmacro parse-test-ce (rule-name position conditional-element)
   (if (eq position 0)
-      (format t "A Test-CE cannot appear FIRST in a rule!") ; TBD! Raise exception!?
+      (error "Error in ~A~%A Test-CE cannot appear first in a rule!" rule-name)
       `(let ((left-node (gethash ,(- position 1) *nodes*))
 	     (test-node (make-test-node ',rule-name ',(cadr conditional-element) ,position)))
 	 (setf (gethash ,position *nodes*) test-node)
@@ -464,7 +457,7 @@
 	 (setf (gethash ',variable *fact-bindings*) ,position))
        (multiple-value-bind (alpha-node deferred-tests)
            (make-alpha-node ',rule-name ',defstruct-name ',conditional-element ',variable ,position t)
-         (setf (gethash ,position *nodes*) alpha-node) ; TBD! This should be done differently!?
+         (setf (gethash ,position *nodes*) alpha-node)
          (setf beta-node (make-beta-node ',rule-name ,position deferred-tests))
          (connect-nodes alpha-node (make-sym beta-node "-right"))))))
 
@@ -490,6 +483,7 @@
                   (make-symbol-constraint defstruct-name slot-name slot-binding slot-constraint variable position accessible)
                   (make-literal-constraint defstruct-name slot-name slot-constraint))
               tests)))
+
     (let* ((alpha-node-name (make-sym "ALPHA/" rule-name "-" (format nil "~A" position) "/" defstruct-name))
            (alpha-node `(defun ,alpha-node-name (key fact timestamp)
                           (format *trace* "~&(~A :KEY ~S :FACT ~S :TIMESTAMP ~S)~%" ',alpha-node-name key fact timestamp)
@@ -545,6 +539,7 @@
 				 (when (and ,@(make-binding-test position) ,@(expand-variables-token deferred-tests))
 				   (store key tok ',(make-sym "MEMORY/" beta-node-name))
 				   (propagate key tok timestamp ',beta-node-name)))))
+
 			   (defun ,right-activate (key fact timestamp)
 			     (format *trace* "~&(~A :KEY ~S :FACT ~S :TIMESTAMP ~S)~%" ',right-activate key fact timestamp)
 			     (dolist (token (contents-of left-memory))
@@ -552,11 +547,13 @@
 				 (when (and ,@(make-binding-test position) ,@(expand-variables-token deferred-tests))
 				   (store key tok ',(make-sym "MEMORY/" beta-node-name))
 				   (propagate key tok timestamp ',beta-node-name))))))
+
 			;; Left-input adapter
 			`(defun ,right-activate (key fact timestamp)
 			   (format *trace* "~&(~A :KEY ~S :FACT ~S :TIMESTAMP ~S)~%" ',right-activate key fact timestamp)
 			   (store key (list fact) ',(make-sym "MEMORY/" beta-node-name))
 			   (propagate key (list fact) timestamp ',beta-node-name)))))
+
     (let ((*print-pretty* t))
       (format *code* "~&~S~%" beta-node))
     (eval beta-node)
@@ -587,6 +584,7 @@
                                 (let ((tok (append token (list nil))))
                                   (store key tok ',(make-sym "MEMORY/" not-node-name))
                                   (propagate key tok timestamp ',not-node-name))))))
+
 		      (defun ,right-activate (key fact timestamp)
 			(format *trace* "~&(~A :KEY ~S :FACT ~S :TIMESTAMP ~S)~%" ',right-activate key fact timestamp)
 			(dolist (token (contents-of left-memory))
@@ -606,6 +604,7 @@
 						(eq (the fixnum old-count) nil))
 					    (eq key '+))
 				       (propagate '- ptok timestamp ',not-node-name)))))))))))
+
     (let ((*print-pretty* t))
       (format *code* "~&~S~%" not-node))
     (eval not-node)
@@ -631,6 +630,7 @@
 		(when ,test-form
 		  (store key token ',(make-sym "MEMORY/" test-node-name))
 		  (propagate key token timestamp ',test-node-name))))))
+
       (let ((*print-pretty* t))
 	(format *code* "~&~S~%" test-node))
       (eval test-node))
@@ -666,6 +666,7 @@
 								    :rhs-function #',(make-sym "RHS/" rule-name)
 								    :production-memory ',production-memory)
 					       ',production-memory))))
+
     (let ((*print-pretty* t))
       (format *code* "~&~S~%" production-node))
     (eval production-node)
@@ -701,9 +702,6 @@
                   (nconc (gethash slot-binding *variable-bindings*)
                          (list (list slot-accessor fact-variable position accessible))))
 	    (when (null slot-constraint) t))))))
-
-(defun expand-variable (variable-name)
-  (car (gethash variable-name *variable-bindings*)))
 
 (defun expand-variables (form)
   (maphash #'(lambda (key value)
@@ -741,6 +739,7 @@
 				   ,@list-of-fact-bindings
 				   ,@list-of-variable-bindings)
 			      ,@rhs))))
+
       (let ((*print-pretty* t))
 	(format *code* "~&~S~%" rhs-function))
       rhs-function)))
