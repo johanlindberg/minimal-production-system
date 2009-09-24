@@ -24,7 +24,6 @@
            :depth
 	   :facts
            :halt
-           :matches
 	   :modify-fact
 	   :reset
 	   :retract-facts
@@ -161,48 +160,6 @@
 	     working-memory)
       result))
 
-  (defun token-to-string (token)
-    (format nil "~{f-~A,~}" token))
-
-  (defun facts-to-indexes (facts)
-    (mapcar #'(lambda (fact)
-                (get-fact-index-of fact))
-            facts))
-
-  (defun matches (rule-name)
-    (let ((alpha-memory (concatenate 'string "MEMORY/ALPHA/" (string rule-name)))
-          (beta-memory (concatenate 'string "MEMORY/BETA/" (string rule-name)))
-          (not-memory (concatenate 'string "MEMORY/NOT/" (string rule-name)))
-          (production-memory (concatenate 'string "MEMORY/PRODUCTION/" (string rule-name)))
-          (i 0)
-          (j 0))
-      (dolist (mem (sort (all-memory-nodes) #'string-lessp))
-        (let ((memory-node (string mem)))
-          (cond ((and (>= (length memory-node) (length alpha-memory))
-                      (string-equal (subseq memory-node 0 (length alpha-memory)) alpha-memory))
-                 (format t "~&Facts in ~A:~%~{f-~A~%~}" memory-node (facts-to-indexes (contents-of mem))))
-                ((and (>= (length memory-node) (length beta-memory))
-                      (string-equal (subseq memory-node 0 (length beta-memory)) beta-memory))
-                 (if (> j 0)
-                     (unless (= (- i j) 1)
-                       (format t "~&Tokens in ~A:~%~{~A~%~}" memory-node (mapcar #'(lambda (token)
-                                                                                    (token-to-string token))
-                                                                                (contents-of mem))))
-                     (incf j)))
-                ((and (>= (length memory-node) (length not-memory))
-                      (string-equal (subseq memory-node 0 (length not-memory)) not-memory))
-                 (if (> j 0)
-                     (unless (= (- i j) 1)
-                       (format t "~&Tokens in ~A:~%~{~A~%~}" memory-node (mapcar #'(lambda (token)
-                                                                                    (token-to-string token))
-                                                                                (contents-of mem))))
-                     (incf j)))
-                ((and (>= (length memory-node) (length production-memory))
-                      (string-equal (subseq memory-node 0 (length production-memory)) production-memory))
-                 (format t "~&Activations for ~A:~%~{~A~%~}" (string rule-name) (mapcar #'(lambda (activation)
-                                                                                            (token-to-string (activation-token activation)))
-                                                                                        (contents-of mem)))))))))
-
   (defmacro modify-fact (fact modifier-fn)
     "Modifies a <fact> in Working Memory as specified in <modifier-fn>.
 
@@ -297,20 +254,6 @@
     (if (gethash type root-node)
 	(push node (gethash type root-node))
 	(setf (gethash type root-node) (list node))))
-
-  (defun all-memory-nodes ()
-    "Returns a list with the names of all memory nodes in the Rete Network."
-    (let ((mem-nodes '()))
-      (maphash #'(lambda (key val)
-		   (declare (ignore val))
-		   (let ((skey (string key)))
-		     (when (and (> (length skey) 7)
-				(string-equal "MEMORY/"
-					      (subseq skey 0 7)))
-		       (setf mem-nodes (cons key mem-nodes)))))
-	       rete-network)
-
-      mem-nodes))
 
   (defun connect-nodes (from to)
     "Connects <from> with <to> in the Rete Network."
