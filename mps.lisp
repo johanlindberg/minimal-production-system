@@ -531,6 +531,7 @@
 			`(let ((left-memory  ',(make-sym "MEMORY/" left-node))
 			       (right-memory ',(make-sym "MEMORY/" right-node)))
 			   (defun ,left-activate (key token timestamp)
+                             (declare (inline get-fact-with-index get-fact-index-of))
 			     (format *trace* "~&(~A :KEY ~S :TOKEN ~S :TIMESTAMP ~S)~%" ',left-activate key token timestamp)
 			     (dolist (fact (contents-of right-memory))
 			       (let ((tok (append token (list (get-fact-index-of fact))))) ; XXX
@@ -540,6 +541,7 @@
 				   (propagate key tok timestamp ',beta-node-name)))))
 
 			   (defun ,right-activate (key fact timestamp)
+                             (declare (inline get-fact-with-index get-fact-index-of))
 			     (format *trace* "~&(~A :KEY ~S :FACT ~S :TIMESTAMP ~S)~%" ',right-activate key fact timestamp)
 			     (dolist (token (contents-of left-memory))
 			       (let ((tok (append token (list (get-fact-index-of fact))))) ; XXX
@@ -550,6 +552,7 @@
 
 			;; Left-input adapter
 			`(defun ,right-activate (key fact timestamp)
+                           (declare (inline get-fact-index-of))
 			   (format *trace* "~&(~A :KEY ~S :FACT ~S :TIMESTAMP ~S)~%" ',right-activate key fact timestamp)
 			   (store key (list (get-fact-index-of fact)) ',(make-sym "MEMORY/" beta-node-name)) ; XXX
 			   (propagate key (list (get-fact-index-of fact)) timestamp ',beta-node-name))))) ; XXX
@@ -570,6 +573,7 @@
 	 (not-node `(let ((left-memory ',(make-sym "MEMORY/" left-node))
 			  (right-memory ',(make-sym "MEMORY/" right-node)))
 		      (defun ,left-activate (key token timestamp)
+                        (declare (inline get-fact-with-index get-fact-index-of))
 			(format *trace* "~&(~A :KEY ~S :TOKEN ~S :TIMESTAMP ~S)~%" ',left-activate key token timestamp)
 			(if (eq (length (contents-of right-memory)) 0)
 			    (let ((tok (append token (list nil))))
@@ -587,6 +591,7 @@
                                   (propagate key tok timestamp ',not-node-name))))))
 
 		      (defun ,right-activate (key fact timestamp)
+                        (declare (inline get-fact-with-index get-fact-index-of))
 			(format *trace* "~&(~A :KEY ~S :FACT ~S :TIMESTAMP ~S)~%" ',right-activate key fact timestamp)
 			(dolist (token (contents-of left-memory))
 			  (let ((tok (append token (list (get-fact-index-of fact)))) ; XXX
@@ -626,6 +631,7 @@
 
     (let ((test-node
 	   `(defun ,test-node-name (key token timestamp)
+              (declare (inline get-fact-with-index))
 	      (format *trace* "~&(~A :KEY ~S :TOKEN ~S :TIMESTAMP ~S)~%" ',test-node-name key token timestamp)
 	      (let* (,@list-of-fact-bindings
 		     ,@list-of-variable-bindings)
@@ -738,6 +744,7 @@
 	     *variable-bindings*)
     (let* ((rhs-function-name (make-sym "RHS/" rule-name))
 	   (rhs-function `(defun ,rhs-function-name (activation)
+                            (declare (inline get-fact-with-index))
 			    (format *trace* "~&(~A :ACTIVATION ~S)~%" ',rhs-function-name activation)
 			    (let* ((token (activation-token activation))
 				   ,@list-of-fact-bindings
