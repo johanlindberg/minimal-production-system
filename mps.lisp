@@ -106,7 +106,7 @@
     "Returns the current agenda and the number of activations on it."
     (let ((conflict-set (nreverse (flatten (get-conflict-set)))))
       (values (funcall conflict-resolution-strategy conflict-set)
-	      (length conflict-set))))
+              (length conflict-set))))
 
   (defun assert-facts (&rest fact-list)
     "Adds facts in <fact-list> to the working memory and Rete Network.
@@ -642,7 +642,7 @@
           (progn ; This is the first binding for this variable
             (setf (gethash slot-binding *variable-bindings*) (list (list slot-accessor fact-variable position accessible)))
             (when (null slot-constraint) t))
-	  
+
           (progn
             (dolist (b binding)
               ;; If this position already has a binding for this variable we'll
