@@ -45,10 +45,9 @@
 
 ;;; Watch parameters
 (defparameter *activations* nil)
-(defparameter *compilations* nil) ; TBD
+(defparameter *compilations* nil)
 (defparameter *facts* nil)
 (defparameter *rules* nil)
-(defparameter *statistics* nil) ; TBD
 
 ;;; Debug parameters
 (defparameter *code* nil) ; Print all generated code
@@ -60,6 +59,7 @@
 (defparameter *ce-bindings* (make-hash-table))
 (defparameter *nodes* (make-hash-table))
 (defparameter *salience* 0)
+(defparameter *compilation-string* '())
 
 ;;; Helper methods
 (defun make-sym (&rest parts)
@@ -336,6 +336,7 @@
               *fact-bindings* (make-hash-table)
               *ce-bindings* (make-hash-table)
               *variable-bindings* (make-hash-table)
+              *compilation-string* '()
               *salience* 0)
         (let ((rhs (if (cdr (member '=> body))
                        (cdr (member '=> body))
@@ -345,6 +346,7 @@
              (compile-lhs ,name 0 ,@lhs)
              (compile-rhs ,name ,@rhs)
              (make-production-node ',name)
+             (format *compilations* "~&DEFRULE ~A: ~{~A~}~%" ',name *compilation-string*)
              ',name)))))
 
 (defmacro compile-lhs (rule-name position &rest conditional-elements)
@@ -434,6 +436,7 @@
       (let ((*print-pretty* t))
         (format *code* "~&~S~%" alpha-node))
       (eval alpha-node)
+      (push "+A" *compilation-string*)
       (if prev-node
           (connect-nodes prev-node alpha-node-name)
           (add-to-root defstruct-name alpha-node-name))
@@ -503,6 +506,7 @@
     (let ((*print-pretty* t))
       (format *code* "~&~S~%" beta-node))
     (eval beta-node)
+    (push "+B" *compilation-string*)
     (unless (eq position 0)
       (connect-nodes left-node left-activate))
     (setf (gethash position *nodes*) beta-node-name)))
@@ -558,6 +562,7 @@
     (let ((*print-pretty* t))
       (format *code* "~&~S~%" not-node))
     (eval not-node)
+    (push "+N" *compilation-string*)
     (connect-nodes left-node left-activate)
     (setf (gethash position *nodes*) not-node-name)))
 
@@ -584,7 +589,8 @@
       
       (let ((*print-pretty* t))
         (format *code* "~&~S~%" test-node))
-      (eval test-node))
+      (eval test-node)
+      (push "+T" *compilation-string*))
     test-node-name))
 
 (defun make-binding-test (position)
@@ -623,6 +629,7 @@
     (let ((*print-pretty* t))
       (format *code* "~&~S~%" production-node))
     (eval production-node)
+    (push "+P" *compilation-string*)
     (connect-nodes (gethash (- (hash-table-count *nodes*) 1) *nodes*) production-node-name)
     (add-to-production-nodes production-node-name)))
 
