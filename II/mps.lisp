@@ -11,9 +11,8 @@
   "Constructs and interns a symbol by concatenating <parts>."
   (let ((result ""))
     (dolist (part parts)
-      (setf result (format nil "~A~A" result (string-upcase part))))
+      (setf result (string-upcase (format nil "~A~A" result part))))
     (intern result)))
-
 
 (defmacro defrule (name &body body)
   (let* ((rhs (member '=> body))
@@ -27,13 +26,28 @@
 	(index 0))
     (dolist (conditional-element conditional-elements)
       (case (car conditional-element)
-	(not (push `(compile-not-ce ,name ,(incf index) ,(cdr conditional-element)) result))
-	(test (push `(compile-test-ce ,name ,(incf index) ,(cdr conditional-element)) result))
-	(otherwise (push `(compile-pattern-ce ,name ,(incf index) ,(cdr conditional-element)) result))))
+	(not (push `(compile-not-ce ,name
+				    ,(incf index)
+				    ,(cdr conditional-element)) 
+		   result))
+	(test (push `(compile-test-ce ,name 
+				      ,(incf index)
+				      ,(cdr conditional-element)) 
+		    result))
+	(otherwise (push `(compile-pattern-ce ,name 
+					      ,(incf index) 
+					      ,conditional-element)
+			 result))))
     `(progn ,@result)))
 
-(defmacro compile-ce (name index conditional-element)
-  `(print '(compile-ce ,name ,index ,conditional-element)))
+(defmacro compile-not-ce (name index conditional-elements)
+  `(compile-lhs ,(sym name index) ,@conditional-elements))
+
+(defmacro compile-test-ce (name index conditional-element)
+  `(print '(compile-test-ce ,name ,index ,conditional-element)))
+
+(defmacro compile-pattern-ce (name index conditional-element)
+  `(print '(compile-pattern-ce ,name ,index ,conditional-element)))
 
 (defmacro compile-rhs (name &rest expressions)
   `(print '(compile-rhs ,name ,@expressions)))
