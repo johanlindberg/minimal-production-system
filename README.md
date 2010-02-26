@@ -14,9 +14,9 @@ are lies!](http://commentsarelies.blogspot.com/search/label/MPS)
 
 ## Current Status
 
-Currently \(2009-10-11\) MPS has a small \(but growing\) set of feature tests \(see
-/tests\) and works, more or less, as it should. The Not-CE can still only handle
-one Pattern-CE. I'll try to fix that during autumn.
+Currently \(2010-02-26\) I've started working on a cleaned up version of MPS.
+You'll find it in the /II folder. I'll post status updates on my new
+blog [Feeding Baby Penguins](http://cons.pulp.se/).
 
 ## Simplest example possible
 
