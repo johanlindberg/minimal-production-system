@@ -34,16 +34,27 @@
 	(not (push `(compile-not-ce ,name ,(incf index) ,(cdr ce)) result))
 	(test (push `(compile-test-ce ,name ,(incf index) ,(cdr ce)) result))
 	(otherwise (push `(compile-pattern-ce ,name ,(incf index) ,ce) result))))
-    `(progn ,@result)))
+    `(progn
+       ,@result
+       (make-production-node ,name ,(incf index)))))
 
 (defmacro compile-not-ce (name index conditional-elements)
   `(let ((not-node (compile-lhs ,(sym name index)
 				,@conditional-elements)))
      (magic-happens-here ,name ,index)))
 
+(defun make-not-node (name index conditional-elements)
+  (print t))
 
-(defmacro compile-test-ce (name index conditional-element)
-  `(make-test-node ,name ,index ,conditional-element))
+(defmacro compile-test-ce (name index test-form)
+  `(make-test-node ,name ,index ,test-form))
+
+(defun make-test-node (name index test-form)
+  (print `(defun ,(sym name index) (key token timestamp)
+	    (let (,@(expand-variable-bindings))
+	      (when ,test-form
+		(store key token ,(sym "MEMORY/" name index))
+		(,(sym name (+ index 1)) key token timestamp))))))
 
 (defmacro compile-pattern-ce (name index conditional-element)
   `(progn
