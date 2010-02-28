@@ -1,5 +1,9 @@
 ;;;; Minimal Production System II
 
+;; 
+
+(defvar *object-type-node* (make-hash-table))
+
 ;; Helper methods
 
 (defun variablep (sym)
@@ -36,7 +40,11 @@
 	(otherwise (push `(compile-pattern-ce ,name ,(incf index) ,ce) result))))
     `(progn
        ,@result
-       (make-production-node ,name ,(incf index)))))
+       (make-production-node ',name ,(incf index)))))
+
+(defun make-production-node (name index)
+  (print `(defun ,(sym name index) (key token timestamp)
+	    (store-activation key token timestamp))))
 
 (defmacro compile-not-ce (name index conditional-elements)
   `(let ((not-node (compile-lhs ,(sym name index)
@@ -44,16 +52,18 @@
      (magic-happens-here ,name ,index)))
 
 (defun make-not-node (name index conditional-elements)
+  (declare (ignore name index conditional-elements))
   (print t))
 
 (defmacro compile-test-ce (name index test-form)
-  `(make-test-node ,name ,index ,test-form))
+  `(make-test-node ',name ,index ,test-form)
+  `(make-beta-node ',name ,index ,t))
 
 (defun make-test-node (name index test-form)
   (print `(defun ,(sym name index) (key token timestamp)
 	    (let (,@(expand-variable-bindings))
 	      (when ,test-form
-		(store key token ,(sym "MEMORY/" name index))
+		(store key token ,(sym name index "-alpha-memory"))
 		(,(sym name (+ index 1)) key token timestamp))))))
 
 (defmacro compile-pattern-ce (name index conditional-element)
@@ -61,8 +71,25 @@
      (unless (gethash ',(car conditional-element) *object-type-node*)
        (setf (gethash ',(car conditional-element) *object-type-node*)
 	     ',(sym name index)))
-     (make-alpha-node ,name ,index ,conditional-element)
-     (make-beta-node ,name ,index)))
+     (make-alpha-node ',name ,index ,conditional-element)
+     (make-beta-node ',name ,index t)))
+
+(defun make-alpha-node (name index constraints)
+  (print `(defun ,(sym name index) (key token timestamp)
+	    (let (,@(expand-variable-bindings))
+	      (when ,constraints
+		(store key token ,(sym name index "-alpha-memory"))
+		(,(sym name (+ index 1)) key token timestamp))))))
+
+(defun make-beta-node (name index join-constraints)
+  (print `(progn
+	    (defun ,(sym name index "-left") (key token timestamp)
+	      (when ,join-constraints
+		(store key token ,(sym name index "-beta-memory"))
+		(,(sym name (+ index 1)) key token timestamp))))))
+
+(defun expand-variable-bindings ()
+  `())
 
 (defmacro compile-rhs (name &rest expressions)
   `(print '(compile-rhs ,name ,@expressions)))
