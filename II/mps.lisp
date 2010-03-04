@@ -36,21 +36,31 @@
 
 (defmacro defrule (name &body body)
   (let* ((rhs (member '=> body))
-	 (lhs (ldiff body rhs)))
+	 (lhs (ldiff body rhs))
+	 (production-node-name (sym name "-production")))
     (setf *fact-bindings* (make-hash-table))
     (setf *variable-bindings* (make-hash-table))
     `(progn
-       (compile-lhs ,name ,@lhs)
+       (compile-lhs ,name ,production-node-name ,@lhs)
+       (make-object-type-node) ; regenerate the object-type-node defun
+       (make-production-node ',production-node-name)
        (compile-rhs ,name ,@(cdr rhs)))))
 
-(defmacro compile-lhs (name &rest conditional-elements)
+(defmacro compile-lhs (name end-node-name &rest conditional-elements)
   (let ((result '())
+	(next-node-name nil)
 	(index 0))
     (dolist (ce conditional-elements)
       (incf index)
+      (if (eq index (length conditional-elements))
+	  (setf next-node-name end-node-name)
+	  (setf next-node-name (sym name (+ index 1))))
+
       (case (car ce) ;; Dispatch on CE type (not, test and pattern)
-	(not (push `(compile-not-ce ,name ,index ,(cdr ce)) result))
-	(test (push `(compile-test-ce ,name ,index ,(cdr ce)) result))
+	(not
+	 (push `(compile-not-ce ,name ,index ,next-node-name ,(cdr ce)) result))
+	(test
+	 (push `(compile-test-ce ,name ,index ,next-node-name ,(cdr ce)) result))
 	(otherwise
 	 (progn
 	   ;; If a CE starts with a variable it is assumed to be a fact binding.
@@ -60,11 +70,9 @@
 	     (setf (gethash (car ce) *fact-bindings*)
 		   `(,(car ce) (nth ,index token)))
 	     (setf ce (cadr ce))) ; make sure that we only pass on the actual CE
-	   (push `(compile-pattern-ce ,name ,index ,ce) result)))))
+	   (push `(compile-pattern-ce ,name ,index ,next-node-name ,ce) result)))))
     `(progn
-       ,@result
-       (make-object-type-node) ; regenerate the object-type-node defun
-       (make-production-node ',name ,(+ index 1)))))
+       ,@result)))
 
 (defun make-object-type-node ()
   (let ((body '()))
@@ -83,15 +91,32 @@
   (print `(defun ,(sym name index "-left") (key token timestamp)
 	    (store-activation key token timestamp))))
 
-(defmacro compile-not-ce (name index conditional-elements)
-  `(let ((not-node (compile-lhs ,(sym name index)
-				,@conditional-elements)))
-     (magic-happens-here ,name ,index)))
+(defmacro compile-not-ce (name index next conditional-elements)
+  `(progn
+     (compile-lhs ,(sym name index)
+		  ,(sym name index "-right")
+		  ,@conditional-elements)
+     (make-not-node ,name ,index)))
 
-(defun make-not-node (name index conditional-elements)
-  (declare (ignore name index conditional-elements))
-  (print t))
-
+(defun make-not-node (name index)
+  (let ((left `(defun ,(sym name index "-left") (key tok timestamp)
+		 (dolist (fact (contents-of ,(sym name (- index 1) "-alpha-memory")))
+		   (let* ((token (append tok (list fact)))
+			  ,@(expand-variable-bindings))
+		   (when ,join-constraints
+		     (store key token ,(sym name index "-beta-memory"))
+		     (,(sym name (+ index 1) "-left") key token timestamp))))))
+	(right `(defun ,(sym name index "-right") (key fact timestamp)
+		  (dolist (tok (contents-of ,(sym name (- index 1) "-beta-memory")))
+		    (let* ((token (append tok (list fact)))
+			   ,@(expand-variable-bindings))
+		      (when ,join-constraints
+			(store key token ,(sym name index "-beta-memory"))
+			(,(sym name (+ index 1) "-left") key token timestamp)))))))
+    (print `(progn
+	      ,left
+	      ,right))))
+  
 (defmacro compile-test-ce (name index test-form)
   `(make-test-node ',name ,index ,test-form)
   `(make-beta-node ',name ,index ,t))
