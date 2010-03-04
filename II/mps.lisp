@@ -59,7 +59,7 @@
 	   (when (variablep (car ce))
 	     (setf (gethash (car ce) *fact-bindings*)
 		   `(,(car ce) (nth ,index token)))
-	     (setf ce (cdr ce))) ; make sure that we only pass on the actual CE
+	     (setf ce (cadr ce))) ; make sure that we only pass on the actual CE
 	   (push `(compile-pattern-ce ,name ,index ,ce) result)))))
     `(progn
        ,@result
@@ -69,8 +69,10 @@
 (defun make-object-type-node ()
   (let ((body '()))
     (maphash #'(lambda (key value)
-		 (dolist (v value)
-		   (push `(,key (,v fact)) body)))
+		 (let ((result '()))
+		   (dolist (v value)
+		     (push `(,v fact) result))
+		   (push `(,key (progn ,@result)) body)))
 	     *object-type-node*)
     (print `(defun object-type-node (&rest facts)
 	      (dolist (fact facts)
@@ -104,9 +106,9 @@
 (defmacro compile-pattern-ce (name index conditional-element)
   (multiple-value-bind (slot-constraint join-constraint)
       (extract-constraints (cdr conditional-element))
-    (unless (member (sym name index "-right") 
+    (unless (member (sym name index)
 		    (gethash (car conditional-element) *object-type-node* '()))
-      (push (sym name index "-right")
+      (push (sym name index)
 	    (gethash (car conditional-element) *object-type-node* '())))
     `(progn
        (make-alpha-node ',name ,index ',slot-constraint)
