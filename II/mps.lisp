@@ -87,8 +87,8 @@
 		(case (type-of fact)
 		  ,@body))))))
 
-(defun make-production-node (name index)
-  (print `(defun ,(sym name index "-left") (key token timestamp)
+(defun make-production-node (name)
+  (print `(defun ,(sym name "-left") (key token timestamp)
 	    (store-activation key token timestamp))))
 
 (defmacro compile-not-ce (name index next conditional-elements)
@@ -96,39 +96,38 @@
      (compile-lhs ,(sym name index)
 		  ,(sym name index "-right")
 		  ,@conditional-elements)
-     (make-not-node ,name ,index)))
+     (make-not-node ,name ,index ',next t)))
 
-(defun make-not-node (name index)
+(defun make-not-node (name index next join-constraints)
   (let ((left `(defun ,(sym name index "-left") (key tok timestamp)
 		 (dolist (fact (contents-of ,(sym name (- index 1) "-alpha-memory")))
 		   (let* ((token (append tok (list fact)))
 			  ,@(expand-variable-bindings))
 		   (when ,join-constraints
 		     (store key token ,(sym name index "-beta-memory"))
-		     (,(sym name (+ index 1) "-left") key token timestamp))))))
+		     (,(sym next "-left") key token timestamp))))))
 	(right `(defun ,(sym name index "-right") (key fact timestamp)
 		  (dolist (tok (contents-of ,(sym name (- index 1) "-beta-memory")))
 		    (let* ((token (append tok (list fact)))
 			   ,@(expand-variable-bindings))
 		      (when ,join-constraints
 			(store key token ,(sym name index "-beta-memory"))
-			(,(sym name (+ index 1) "-left") key token timestamp)))))))
+			(,(sym next "-left") key token timestamp)))))))
     (print `(progn
 	      ,left
 	      ,right))))
   
-(defmacro compile-test-ce (name index test-form)
-  `(make-test-node ',name ,index ,test-form)
-  `(make-beta-node ',name ,index ,t))
+(defmacro compile-test-ce (name index next test-form)
+  `(make-test-node ',name ,index ',next ,test-form))
 
-(defun make-test-node (name index test-form)
+(defun make-test-node (name index next test-form)
   (print `(defun ,(sym name index "-left") (key token timestamp)
 	    (let (,@(expand-variable-bindings))
 	      (when ,test-form
 		(store key token ,(sym name index "-alpha-memory"))
-		(,(sym name (+ index 1) "-left") key token timestamp))))))
+		(,(sym next "-left") key token timestamp))))))
 
-(defmacro compile-pattern-ce (name index conditional-element)
+(defmacro compile-pattern-ce (name index next conditional-element)
   (multiple-value-bind (slot-constraint join-constraint)
       (extract-constraints (cdr conditional-element))
     (unless (member (sym name index)
@@ -137,7 +136,7 @@
 	    (gethash (car conditional-element) *object-type-node* '())))
     `(progn
        (make-alpha-node ',name ,index ',slot-constraint)
-       (make-beta-node ',name ,index ',join-constraint))))
+       (make-beta-node ',name ,index ',next ',join-constraint))))
 
 (defun extract-constraints (conditional-element)
   (let ((slot-constraint '())
@@ -159,21 +158,21 @@
 	      (store key token ',(sym name index "-alpha-memory"))
 	      (,(sym name index "-right") key token timestamp)))))
 
-(defun make-beta-node (name index join-constraints)
+(defun make-beta-node (name index next join-constraints)
   (let ((left `(defun ,(sym name index "-left") (key tok timestamp)
 		 (dolist (fact (contents-of ,(sym name (- index 1) "-alpha-memory")))
 		   (let* ((token (append tok (list fact)))
 			  ,@(expand-variable-bindings))
 		   (when ,join-constraints
 		     (store key token ,(sym name index "-beta-memory"))
-		     (,(sym name (+ index 1) "-left") key token timestamp))))))
+		     (,(sym next "-left") key token timestamp))))))
 	(right `(defun ,(sym name index "-right") (key fact timestamp)
 		  (dolist (tok (contents-of ,(sym name (- index 1) "-beta-memory")))
 		    (let* ((token (append tok (list fact)))
 			   ,@(expand-variable-bindings))
 		      (when ,join-constraints
 			(store key token ,(sym name index "-beta-memory"))
-			(,(sym name (+ index 1) "-left") key token timestamp)))))))
+			(,(sym next "-left") key token timestamp)))))))
     (print `(progn
 	      ,left
 	      ,right))))
