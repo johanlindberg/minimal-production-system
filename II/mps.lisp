@@ -96,7 +96,7 @@
      (compile-lhs ,(sym name index)
 		  ,(sym name index "-right")
 		  ,@conditional-elements)
-     (make-not-node ,name ,index ',next t)))
+     (make-not-node ',name ,index ',next t)))
 
 (defun make-not-node (name index next join-constraints)
   (let ((left `(defun ,(sym name index "-left") (key tok timestamp)
@@ -113,9 +113,11 @@
 		      (when ,join-constraints
 			(store key token ,(sym name index "-beta-memory"))
 			(,(sym next "-left") key token timestamp)))))))
-    (print `(progn
-	      ,left
-	      ,right))))
+    (print (if (eq index 1)
+	       `(progn ,right)
+	       `(progn
+		  ,left
+		  ,right)))))
   
 (defmacro compile-test-ce (name index next test-form)
   `(make-test-node ',name ,index ',next ,test-form))
@@ -173,9 +175,11 @@
 		      (when ,join-constraints
 			(store key token ,(sym name index "-beta-memory"))
 			(,(sym next "-left") key token timestamp)))))))
-    (print `(progn
-	      ,left
-	      ,right))))
+    (print (if (eq index 1)
+	       `(progn ,right)
+	       `(progn
+		  ,left
+		  ,right)))))
 
 (defun expand-variable-bindings ()
   (let ((result '()))
@@ -187,7 +191,10 @@
 		 (push v result)) *fact-bindings*)
     result))
 
-(defmacro compile-rhs (name &rest expressions)
-  `(print '(compile-rhs ,name ,@expressions)))
-      
-    
+(defmacro compile-rhs (name &rest body)
+  `(make-rhs-node ',name ',body))
+
+(defun make-rhs-node (name body)
+  (print `(defun ,(sym name "-rhs") (token)
+	    (let (,@(expand-variable-bindings))
+	      ,@body))))
