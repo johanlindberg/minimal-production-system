@@ -14,19 +14,14 @@
       (setf result (string-upcase (format nil "~A~A" result part))))
     (intern result)))
 
-;; Compile time temporary data. These variables holds fact and variable bindings
-;; that need to be accessed at macroexpansion time
+;; Temporary data (used at macroexpansion time).
 
 (defparameter *fact-bindings* nil)
 (defparameter *variable-bindings* nil)
 
-;; Compile time session data. This variables hold the dispatch information for
-;; the object type node (aka bus node in Forgy's thesis). The object type node
-;; is reconstructed every time a new rule is defined.
-
 (defvar *object-type-node* (make-hash-table))
 
-;; Core data structures. This variable holds all memories.
+;; Runtime data (core).
 
 (defvar *memory* (make-hash-table))
 (defvar *activations* (make-hash-table))
@@ -51,7 +46,6 @@
 	(next-node-name nil)
 	(index 0))
     (dolist (ce conditional-elements)
-      (incf index)
       (if (eq index (length conditional-elements))
 	  (setf next-node-name end-node-name)
 	  (setf next-node-name (sym name (+ index 1))))
@@ -70,7 +64,9 @@
 	     (setf (gethash (car ce) *fact-bindings*)
 		   `(,(car ce) (nth ,index token)))
 	     (setf ce (cadr ce))) ; make sure that we only pass on the actual CE
-	   (push `(compile-pattern-ce ,name ,index ,next-node-name ,ce) result)))))
+	   (push `(compile-pattern-ce ,name ,index ,next-node-name ,ce) result))))
+      (incf index))
+
     `(progn
        ,@result)))
 
@@ -113,7 +109,7 @@
 		      (when ,join-constraints
 			(store key token ,(sym name index "-beta-memory"))
 			(,(sym next "-left") key token timestamp)))))))
-    (print (if (eq index 1)
+    (print (if (eq index 0)
 	       `(progn ,right)
 	       `(progn
 		  ,left
@@ -131,7 +127,7 @@
 
 (defmacro compile-pattern-ce (name index next conditional-element)
   (multiple-value-bind (slot-constraint join-constraint)
-      (extract-constraints (cdr conditional-element))
+      (extract-constraints index conditional-element)
     (unless (member (sym name index)
 		    (gethash (car conditional-element) *object-type-node* '()))
       (push (sym name index)
@@ -140,19 +136,37 @@
        (make-alpha-node ',name ,index ',slot-constraint)
        (make-beta-node ',name ,index ',next ',join-constraint))))
 
-(defun extract-constraints (conditional-element)
-  (let ((slot-constraint '())
-	(join-constraint '()))
-    (dolist (slot conditional-element)
-      (let ((slot-name (car slot))
-	    (slot-value (cadr slot))
-	    (slot-constraint (caddr slot)))))
-;	(cond ((variablep slot-value)
-;	       (let ((binding (gethash slot-value *variable-bindings*)))
-;		 (when (and binding (
-;		   (if (
-;		   (if 
-	(values slot-constraint t)))
+(defun extract-constraints (index conditional-element)
+  (let ((slot-constraints '())
+	(join-constraints '())
+	(defstruct-name (car conditional-element)))
+    (dolist (slot (cdr conditional-element))
+      (let* ((slot-name (car slot))
+	     (slot-value (cadr slot))
+	     (slot-constraint (caddr slot))
+	     (existing-binding (gethash slot-value *variable-bindings* '()))
+	     (new-binding `(,(sym defstruct-name "-" slot-name)
+			     (nth ,index token))))
+	(if (variablep slot-value)
+	    ;; slot ::= (name variable constraint)
+	    (if existing-binding
+		(if (eq index (caddr existing-binding))
+		    (push `(equalp ,(cadr existing-binding) ,new-binding)
+			  slot-constraints)
+		    (push `(equalp ,(cadr existing-binding) ,new-binding)
+			  join-constraints))
+		(setf (gethash slot-value *variable-bindings*)
+		      `(,slot-value ,new-binding ,index)))
+	    ;; slot ::= (name constant constraint)
+	    (push `(equalp ',slot-value ,new-binding) slot-constraints))
+
+	(when slot-constraint
+	  (push slot-constraint slot-constraints))))
+
+    (unless join-constraints
+      (setf join-constraints `(t)))
+    (values `(and ,@slot-constraints)
+	    `(and ,@join-constraints))))
 
 (defun make-alpha-node (name index slot-constraint)
   (print `(defun ,(sym name index) (key fact timestamp)
@@ -185,7 +199,7 @@
   (let ((result '()))
     (maphash #'(lambda (k v)
 		 (declare (ignore k))
-		 (push v result)) *variable-bindings*)
+		 (push `(,(car v) ,(cadr v)) result)) *variable-bindings*)
     (maphash #'(lambda (k v)
 		 (declare (ignore k))
 		 (push v result)) *fact-bindings*)
