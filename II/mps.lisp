@@ -144,21 +144,24 @@
       (let* ((slot-name (car slot))
 	     (slot-value (cadr slot))
 	     (slot-constraint (caddr slot))
-	     (existing-binding (gethash slot-value *variable-bindings* '()))
-	     (new-binding `(,(sym defstruct-name "-" slot-name)
-			     (nth ,index token))))
+	     (slot-accessor (sym defstruct-name "-" slot-name))
+	     (existing-binding (gethash slot-value *variable-bindings* '())))
 	(if (variablep slot-value)
 	    ;; slot ::= (name variable constraint)
 	    (if existing-binding
 		(if (eq index (caddr existing-binding))
-		    (push `(equalp ,(cadr existing-binding) ,new-binding)
+		    (push `(equalp ,(cadr existing-binding)
+				   (,slot-accessor (nth ,index token)))
 			  slot-constraints)
-		    (push `(equalp ,(cadr existing-binding) ,new-binding)
+		    (push `(equalp ,(cadr existing-binding)
+				   (,slot-accessor (nth ,index token)))
 			  join-constraints))
 		(setf (gethash slot-value *variable-bindings*)
-		      `(,slot-value ,new-binding ,index)))
+		      `(,slot-value ,slot-accessor ,index)))
 	    ;; slot ::= (name constant constraint)
-	    (push `(equalp ',slot-value ,new-binding) slot-constraints))
+	    (push `(equalp ',slot-value
+			   (,slot-accessor (nth ,index token)))
+		  slot-constraints))
 
 	(when slot-constraint
 	  (push slot-constraint slot-constraints))))
@@ -170,9 +173,10 @@
 
 (defun make-alpha-node (name index slot-constraint)
   (print `(defun ,(sym name index) (key fact timestamp)
-	    (when ,slot-constraint
-	      (store key token ',(sym name index "-alpha-memory"))
-	      (,(sym name index "-right") key token timestamp)))))
+	    (let (,@(expand-fact-bindings index))
+	      (when ,slot-constraint
+		(store key token ',(sym name index "-alpha-memory"))
+		(,(sym name index "-right") key token timestamp))))))
 
 (defun make-beta-node (name index next join-constraints)
   (let ((left `(defun ,(sym name index "-left") (key tok timestamp)
@@ -189,20 +193,31 @@
 		      (when ,join-constraints
 			(store key token ,(sym name index "-beta-memory"))
 			(,(sym next "-left") key token timestamp)))))))
-    (print (if (eq index 1)
+    (print (if (eq index 0)
 	       `(progn ,right)
 	       `(progn
 		  ,left
 		  ,right)))))
 
+(defun expand-fact-bindings (index)
+  (let ((result '()))
+    (maphash #'(lambda (k v)
+		 (declare (ignore k))
+		 (when (eq (caddr v) index)
+		   (push `(,(car v) (,(cadr v) fact)) result)))
+	     *variable-bindings*)
+    result))
+
 (defun expand-variable-bindings ()
   (let ((result '()))
     (maphash #'(lambda (k v)
 		 (declare (ignore k))
-		 (push `(,(car v) ,(cadr v)) result)) *variable-bindings*)
+		 (push `(,(car v) (,(cadr v) (nth ,(caddr v) token))) result))
+	     *variable-bindings*)
     (maphash #'(lambda (k v)
 		 (declare (ignore k))
-		 (push v result)) *fact-bindings*)
+		 (push v result))
+	     *fact-bindings*)
     result))
 
 (defmacro compile-rhs (name &rest body)
