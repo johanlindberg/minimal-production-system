@@ -36,24 +36,23 @@
     (setf *fact-bindings* (make-hash-table))
     (setf *variable-bindings* (make-hash-table))
     `(progn
+       (make-production-node ',production-node-name)
        (compile-lhs ,name ,production-node-name ,@lhs)
        (make-object-type-node) ; regenerate the object-type-node defun
-       (make-production-node ',production-node-name)
        (compile-rhs ,name ,@(cdr rhs)))))
 
 (defmacro compile-lhs (name end-node-name &rest conditional-elements)
   (let ((result '())
 	(next-node-name nil)
-	(index 0))
-    (dolist (ce conditional-elements)
-      (if (eq index (length conditional-elements))
+	(index (- (length conditional-elements) 1)))
+    (dolist (ce (reverse conditional-elements))
+      (if (eq index (- (length conditional-elements) 1))
 	  (setf next-node-name end-node-name)
 	  (setf next-node-name (sym name (+ index 1))))
-
       (case (car ce) ;; Dispatch on CE type (not, test and pattern)
 	(not
 	 (push `(compile-not-ce ,name ,index ,next-node-name ,(cdr ce)) result))
-	(test
+	(test 
 	 (push `(compile-test-ce ,name ,index ,next-node-name ,(cdr ce)) result))
 	(otherwise
 	 (progn
@@ -65,8 +64,7 @@
 		   `(,(car ce) (nth ,index token)))
 	     (setf ce (cadr ce))) ; make sure that we only pass on the actual CE
 	   (push `(compile-pattern-ce ,name ,index ,next-node-name ,ce) result))))
-      (incf index))
-
+      (decf index))
     `(progn
        ,@result)))
 
@@ -96,19 +94,35 @@
 
 (defun make-not-node (name index next join-constraints)
   (let ((left `(defun ,(sym name index "-left") (key tok timestamp)
-		 (dolist (fact (contents-of ,(sym name (- index 1) "-alpha-memory")))
-		   (let* ((token (append tok (list fact)))
-			  ,@(expand-variable-bindings))
-		   (when ,join-constraints
-		     (store key token ,(sym name index "-beta-memory"))
-		     (,(sym next "-left") key token timestamp))))))
+		 (if (eq (length (contents-of ,(sym name (- index 1) "-alpha-memory"))) 0)
+		     (let ((token (append tok (list nil))))
+		       (store key token ,(sym name index "-beta-memory"))
+		       (,(sym next "-left") key token timestamp))
+		     (let ((propagate-token t))
+		       (dolist (fact (contents-of ,(sym name (- index 1) "-alpha-memory")))
+			 (let ((token (append tok (list fact))))
+			   (when ,join-constraints
+			     (setf propagate-token nil))))
+		       (when propagate-token
+			 (let ((token (append tok (list nil))))
+			   (store key token ,(sym name index "-beta-memory"))
+			   (,(sym next "-left") key token timestamp)))))))
 	(right `(defun ,(sym name index "-right") (key fact timestamp)
 		  (dolist (tok (contents-of ,(sym name (- index 1) "-beta-memory")))
-		    (let* ((token (append tok (list fact)))
-			   ,@(expand-variable-bindings))
+		    (let ((token (append tok (list fact))))
 		      (when ,join-constraints
-			(store key token ,(sym name index "-beta-memory"))
-			(,(sym next "-left") key token timestamp)))))))
+			(multiple-value-bind (new-count old-count)
+			    (update-count key token ',(sym name index "-not-memory"))
+			  (store key token ,(sym name index "-beta-memory"))
+			  (cond ((and (eq new-count 0)
+				      (eq old-count 1)
+				      (eq key '-))
+				 (,(sym next "-left") '+ token timestamp))
+				((and (eq new-count 1)
+				      (or (eq old-count 0)
+					  (eq old-count nil))
+				      (eq key '+))
+				 (,(sym next "-left") '- token timestamp))))))))))
     (print (if (eq index 0)
 	       `(progn ,right)
 	       `(progn
@@ -150,10 +164,12 @@
 	    ;; slot ::= (name variable constraint)
 	    (if existing-binding
 		(if (eq index (caddr existing-binding))
-		    (push `(equalp ,(cadr existing-binding)
+		    (push `(equalp (,(cadr existing-binding)
+				     (nth ,(caddr existing-binding) token))
 				   (,slot-accessor (nth ,index token)))
 			  slot-constraints)
-		    (push `(equalp ,(cadr existing-binding)
+		    (push `(equalp (,(cadr existing-binding)
+				     (nth ,(caddr existing-binding) token))
 				   (,slot-accessor (nth ,index token)))
 			  join-constraints))
 		(setf (gethash slot-value *variable-bindings*)
@@ -162,12 +178,9 @@
 	    (push `(equalp ',slot-value
 			   (,slot-accessor (nth ,index token)))
 		  slot-constraints))
-
 	(when slot-constraint
 	  (push slot-constraint slot-constraints))))
 
-    (unless join-constraints
-      (setf join-constraints `(t)))
     (values `(and ,@slot-constraints)
 	    `(and ,@join-constraints))))
 
@@ -181,15 +194,13 @@
 (defun make-beta-node (name index next join-constraints)
   (let ((left `(defun ,(sym name index "-left") (key tok timestamp)
 		 (dolist (fact (contents-of ,(sym name (- index 1) "-alpha-memory")))
-		   (let* ((token (append tok (list fact)))
-			  ,@(expand-variable-bindings))
-		   (when ,join-constraints
-		     (store key token ,(sym name index "-beta-memory"))
-		     (,(sym next "-left") key token timestamp))))))
+		   (let* ((token (append tok (list fact))))
+		     (when ,join-constraints
+		       (store key token ,(sym name index "-beta-memory"))
+		       (,(sym next "-left") key token timestamp))))))
 	(right `(defun ,(sym name index "-right") (key fact timestamp)
 		  (dolist (tok (contents-of ,(sym name (- index 1) "-beta-memory")))
-		    (let* ((token (append tok (list fact)))
-			   ,@(expand-variable-bindings))
+		    (let* ((token (append tok (list fact))))
 		      (when ,join-constraints
 			(store key token ,(sym name index "-beta-memory"))
 			(,(sym next "-left") key token timestamp)))))))
