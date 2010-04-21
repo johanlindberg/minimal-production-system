@@ -1,6 +1,32 @@
 ;; Minimal Production System II
 ;; Compiler
 
+;; Helper methods
+
+(defun variablep (sym)
+  "Returns T if <sym> is a variable (starts with ?) otherwise NIL."
+  (and (symbolp sym)
+       (eq (char (string sym) 0) #\?)))
+
+(defun sym (&rest parts)
+  "Constructs and interns a symbol by concatenating <parts>."
+  (let ((result ""))
+    (dolist (part parts)
+      (setf result (string-upcase (format nil "~A~A" result part))))
+    (intern result)))
+
+(defmacro emit (&body body)
+  `(progn
+     (print ,@body)
+     (eval ,@body)))
+
+;; Temporary data (used at macroexpansion time).
+
+(defparameter *fact-bindings* nil)
+(defparameter *variable-bindings* nil)
+
+(defvar *object-type-node* (make-hash-table))
+
 ;; These macros are the building blocks of the MPS rule language and they
 ;; expand into a bunch of defuns that represent the Rete network of the rules.
 
