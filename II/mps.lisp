@@ -14,6 +14,11 @@
       (setf result (string-upcase (format nil "~A~A" result part))))
     (intern result)))
 
+(defmacro emit (&body body)
+  `(progn
+     (print ,@body)
+     (eval ,@body)))
+
 ;; Temporary data (used at macroexpansion time).
 
 (defparameter *fact-bindings* nil)
@@ -76,13 +81,13 @@
 		     (push `(,v fact) result))
 		   (push `(,key (progn ,@result)) body)))
 	     *object-type-node*)
-    (eval `(defun object-type-node (&rest facts)
+    (emit `(defun object-type-node (&rest facts)
 	     (dolist (fact facts)
 	       (case (type-of fact)
 		 ,@body))))))
 
 (defun make-production-node (name)
-  (eval `(defun ,(sym name "-left") (key token timestamp)
+  (emit `(defun ,(sym name "-left") (key token timestamp)
 	   (store-activation key token timestamp))))
 
 (defmacro compile-not-ce (name index next conditional-elements)
@@ -123,7 +128,7 @@
 					  (eq old-count nil))
 				      (eq key '+))
 				 (,(sym next "-left") '- token timestamp))))))))))
-    (eval (if (eq index 0)
+    (emit (if (eq index 0)
 	      `(progn ,right)
 	      `(progn
 		 ,left
@@ -133,7 +138,7 @@
   `(make-test-node ',name ,index ',next ,test-form))
 
 (defun make-test-node (name index next test-form)
-  (eval `(defun ,(sym name index "-left") (key token timestamp)
+  (emit `(defun ,(sym name index "-left") (key token timestamp)
 	   (let (,@(expand-variable-bindings))
 	     (when ,test-form
 	       (store key token ,(sym name index "-alpha-memory"))
@@ -185,7 +190,7 @@
 	    `(and ,@join-constraints))))
 
 (defun make-alpha-node (name index slot-constraint)
-  (eval `(defun ,(sym name index) (key fact timestamp)
+  (emit `(defun ,(sym name index) (key fact timestamp)
 	   (let (,@(expand-fact-bindings index))
 	     (when ,slot-constraint
 	       (store key token ',(sym name index "-alpha-memory"))
@@ -204,11 +209,14 @@
 		      (when ,join-constraints
 			(store key token ,(sym name index "-beta-memory"))
 			(,(sym next "-left") key token timestamp)))))))
-    (eval (if (eq index 0)
+    (emit (if (eq index 0)
 	      `(progn ,right)
 	      `(progn
 		 ,left
 		 ,right)))))
+
+(defmacro store-activation (key token memory)
+  `(store ,key ,token ,memory *activations*))
 
 (defun store (key token memory &optional (table *memory*))
   (if (eq key '+)
@@ -247,6 +255,6 @@
   `(make-rhs-node ',name ',body))
 
 (defun make-rhs-node (name body)
-  (eval `(defun ,(sym name "-rhs") (token)
+  (emit `(defun ,(sym name "-rhs") (token)
 	   (let (,@(expand-variable-bindings))
 	     ,@body))))
