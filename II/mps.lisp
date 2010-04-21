@@ -76,14 +76,14 @@
 		     (push `(,v fact) result))
 		   (push `(,key (progn ,@result)) body)))
 	     *object-type-node*)
-    (print `(defun object-type-node (&rest facts)
-	      (dolist (fact facts)
-		(case (type-of fact)
-		  ,@body))))))
+    (eval `(defun object-type-node (&rest facts)
+	     (dolist (fact facts)
+	       (case (type-of fact)
+		 ,@body))))))
 
 (defun make-production-node (name)
-  (print `(defun ,(sym name "-left") (key token timestamp)
-	    (store-activation key token timestamp))))
+  (eval `(defun ,(sym name "-left") (key token timestamp)
+	   (store-activation key token timestamp))))
 
 (defmacro compile-not-ce (name index next conditional-elements)
   `(progn
@@ -123,21 +123,21 @@
 					  (eq old-count nil))
 				      (eq key '+))
 				 (,(sym next "-left") '- token timestamp))))))))))
-    (print (if (eq index 0)
-	       `(progn ,right)
-	       `(progn
-		  ,left
-		  ,right)))))
+    (eval (if (eq index 0)
+	      `(progn ,right)
+	      `(progn
+		 ,left
+		 ,right)))))
   
 (defmacro compile-test-ce (name index next test-form)
   `(make-test-node ',name ,index ',next ,test-form))
 
 (defun make-test-node (name index next test-form)
-  (print `(defun ,(sym name index "-left") (key token timestamp)
-	    (let (,@(expand-variable-bindings))
-	      (when ,test-form
-		(store key token ,(sym name index "-alpha-memory"))
-		(,(sym next "-left") key token timestamp))))))
+  (eval `(defun ,(sym name index "-left") (key token timestamp)
+	   (let (,@(expand-variable-bindings))
+	     (when ,test-form
+	       (store key token ,(sym name index "-alpha-memory"))
+	       (,(sym next "-left") key token timestamp))))))
 
 (defmacro compile-pattern-ce (name index next conditional-element)
   (multiple-value-bind (slot-constraint join-constraint)
@@ -185,11 +185,11 @@
 	    `(and ,@join-constraints))))
 
 (defun make-alpha-node (name index slot-constraint)
-  (print `(defun ,(sym name index) (key fact timestamp)
-	    (let (,@(expand-fact-bindings index))
-	      (when ,slot-constraint
-		(store key token ',(sym name index "-alpha-memory"))
-		(,(sym name index "-right") key token timestamp))))))
+  (eval `(defun ,(sym name index) (key fact timestamp)
+	   (let (,@(expand-fact-bindings index))
+	     (when ,slot-constraint
+	       (store key token ',(sym name index "-alpha-memory"))
+	       (,(sym name index "-right") key token timestamp))))))
 
 (defun make-beta-node (name index next join-constraints)
   (let ((left `(defun ,(sym name index "-left") (key tok timestamp)
@@ -204,23 +204,23 @@
 		      (when ,join-constraints
 			(store key token ,(sym name index "-beta-memory"))
 			(,(sym next "-left") key token timestamp)))))))
-    (print (if (eq index 0)
-	       `(progn ,right)
-	       `(progn
-		  ,left
-		  ,right)))))
+    (eval (if (eq index 0)
+	      `(progn ,right)
+	      `(progn
+		 ,left
+		 ,right)))))
 
-(defmacro store (key token memory)
-  `(if (eq key '+)
-       (if (gethash ,memory rete-network)
-	   (unless (member token (gethash memory rete-network) :test #'equalp)
-	     (push token (gethash memory rete-network)))
-	   (setf (gethash memory rete-network) (list token)))
-       ;; Remove token
-       (when (gethash memory rete-network)
-	 (setf (gethash memory rete-network) (remove-if #'(lambda (item)
-							    (equalp item token))
-							(gethash memory rete-network))))))
+(defun store (key token memory &optional (table *memory*))
+  (if (eq key '+)
+      (if (gethash memory table)
+	  (unless (member token (gethash memory table) :test #'equalp)
+	    (push token (gethash memory table)))
+	  (setf (gethash memory table) (list token)))
+      ;; Remove token
+      (when (gethash memory table)
+	(setf (gethash memory table) (remove-if #'(lambda (item)
+						    (equalp item token))
+						(gethash memory table))))))
 
 (defun expand-fact-bindings (index)
   (let ((result '()))
@@ -247,6 +247,6 @@
   `(make-rhs-node ',name ',body))
 
 (defun make-rhs-node (name body)
-  (print `(defun ,(sym name "-rhs") (token)
-	    (let (,@(expand-variable-bindings))
-	      ,@body))))
+  (eval `(defun ,(sym name "-rhs") (token)
+	   (let (,@(expand-variable-bindings))
+	     ,@body))))
