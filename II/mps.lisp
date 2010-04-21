@@ -198,13 +198,13 @@
 
 (defun make-beta-node (name index next join-constraints)
   (let ((left `(defun ,(sym name index "-left") (key tok timestamp)
-		 (dolist (fact (contents-of ,(sym name (- index 1) "-alpha-memory")))
+		 (dolist (fact (contents-of ',(sym name (- index 1) "-alpha-memory")))
 		   (let* ((token (append tok (list fact))))
 		     (when ,join-constraints
 		       (store key token ',(sym name index "-beta-memory"))
 		       (,(sym next "-left") key token timestamp))))))
 	(right `(defun ,(sym name index "-right") (key fact timestamp)
-		  (dolist (tok (contents-of ,(sym name (- index 1) "-beta-memory")))
+		  (dolist (tok (contents-of ',(sym name (- index 1) "-beta-memory")))
 		    (let* ((token (append tok (list fact))))
 		      (when ,join-constraints
 			(store key token ',(sym name index "-beta-memory"))
@@ -214,6 +214,10 @@
 	      `(progn
 		 ,left
 		 ,right)))))
+
+(defun contents-of (memory &optional (table *memory*))
+  "Returns the contents of <memory>."
+  (gethash memory table))
 
 (defmacro store-activation (key token memory)
   `(store ,key ,token ,memory *activations*))
