@@ -210,6 +210,18 @@
 		  ,left
 		  ,right)))))
 
+(defmacro store (key token memory)
+  `(if (eq key '+)
+       (if (gethash ,memory rete-network)
+	   (unless (member token (gethash memory rete-network) :test #'equalp)
+	     (push token (gethash memory rete-network)))
+	   (setf (gethash memory rete-network) (list token)))
+       ;; Remove token
+       (when (gethash memory rete-network)
+	 (setf (gethash memory rete-network) (remove-if #'(lambda (item)
+							    (equalp item token))
+							(gethash memory rete-network))))))
+
 (defun expand-fact-bindings (index)
   (let ((result '()))
     (maphash #'(lambda (k v)
