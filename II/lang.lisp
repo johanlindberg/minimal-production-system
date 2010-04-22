@@ -179,12 +179,14 @@
 		     (when ,join-constraints
 		       (store key token ',(sym name index "-beta-memory"))
 		       (,(sym next "-left") key token timestamp))))))
+
 	(right `(defun ,(sym name index "-right") (key fact timestamp)
 		  (dolist (tok (contents-of ',(sym name (- index 1) "-beta-memory")))
 		    (let* ((token (append tok (list fact))))
 		      (when ,join-constraints
 			(store key token ',(sym name index "-beta-memory"))
 			(,(sym next "-left") key token timestamp))))))
+
 	(top `(defun ,(sym name index "-right") (key fact timestamp)
 		(let* ((token (list fact)))
 		  (store key token ',(sym name index "-beta-memory"))

@@ -47,10 +47,13 @@
   (gethash memory table))
 
 (defmacro store-activation (key token timestamp rule salience)
-  `(store ,key (make-activation :rule ,rule
-				:salience ,salience
-				:token ,token
-				:timestamp ,timestamp) *activations*))
+  `(store ,key
+	  (make-activation :rule ,rule
+			   :salience ,salience
+			   :token ,token
+			   :timestamp ,timestamp)
+	  ,salience
+	  *activations*))
 
 (defun store (key token memory &optional (table *memory*))
   (if (eq key '+)
