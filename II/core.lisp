@@ -3,7 +3,9 @@
 
 ;; Runtime data.
 
-(defvar *memory* (make-hash-table))
+(defvar *memory* (make-hash-table)) ; node memories
+(defvar *working-memory* (make-hash-table))
+
 (defvar *activations* (make-hash-table))
 
 (defvar *object-type-node* (make-hash-table))
@@ -11,10 +13,16 @@
 (defvar *current-timestamp* 0)
 (defvar *current-fact-index* 0)
 
-;; Object type node
+(defstruct activation
+  rule
+  salience
+  token
+  timestamp
+  rhs-function
+  production-memory)
 
-(defun object-type-node (key timestamp &rest facts)
-  (declare (ignore key timestamp facts))) ; dummy impl
+(defun object-type-node (key timestamp &rest facts) ; dummy impl
+  (declare (ignore key timestamp facts)))
 
 (defun make-object-type-node ()
   (let ((body '()))
@@ -35,8 +43,8 @@
   "Returns the contents of <memory>."
   (gethash memory table))
 
-(defmacro store-activation (key token memory)
-  `(store ,key ,token ,memory *activations*))
+(defmacro store-activation (key token rule salience)
+  `(store ,key (make-activation :rule ,rule :salience ,salience :token ,token) *activations*))
 
 (defun store (key token memory &optional (table *memory*))
   (if (eq key '+)
@@ -61,13 +69,23 @@
   (let ((count 0))
     (incf *current-timestamp*)
     (dolist (fact fact-list)
-      (unless (gethash fact *memory*)
+      (unless (gethash fact *working-memory*)
 	(let ((fact-copy (copy-structure fact)))
 	  (incf *current-fact-index*)
-	  (setf (gethash fact-copy *memory*) *current-fact-index*)
-	  (setf (gethash *current-fact-index* *memory*) fact-copy)
+	  (setf (gethash fact-copy *working-memory*) *current-fact-index*)
 	  (incf count)
-
 	  (object-type-node '+ *current-timestamp* fact-copy))))
+
     count))
 
+(defun retract-facts (&rest fact-list)
+  "Removes facts in <fact-list> from the Working Memory and Rete Network."
+  (let ((count 0))
+    (incf *current-timestamp*)
+    (dolist (fact fact-list)
+      (when (gethash fact *working-memory*)
+	(object-type-node '- *current-timestamp* fact)
+	(remhash fact *working-memory*)
+	(incf count)))
+
+    count))
