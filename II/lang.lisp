@@ -15,11 +15,6 @@
       (setf result (string-upcase (format nil "~A~A" result part))))
     (intern result)))
 
-(defmacro emit (&body body)
-  `(progn
-     (print ,@body)
-     (eval ,@body)))
-
 ;; Temporary data (used at macroexpansion time).
 
 (defparameter *fact-bindings* nil)
@@ -35,7 +30,7 @@
     (setf *fact-bindings* (make-hash-table))
     (setf *variable-bindings* (make-hash-table))
     `(progn
-       (make-production-node ',production-node-name)
+       (make-production-node ',production-node-name ',name)
        (compile-lhs ,name ,production-node-name ,@lhs)
        (make-object-type-node) ; regenerate the object-type-node defun
        (compile-rhs ,name ,@(cdr rhs)))))
@@ -67,9 +62,9 @@
     `(progn
        ,@result)))
 
-(defun make-production-node (name)
+(defun make-production-node (name rule)
   (emit `(defun ,(sym name "-left") (key token timestamp)
-	   (store-activation key token timestamp))))
+	   (store-activation key token timestamp ',rule 0))))
 
 (defmacro compile-not-ce (name index next conditional-elements)
   `(progn

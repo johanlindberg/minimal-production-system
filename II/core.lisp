@@ -17,9 +17,12 @@
   rule
   salience
   token
-  timestamp
-  rhs-function
-  production-memory)
+  timestamp)
+
+(defmacro emit (&body body)
+  `(progn
+     (print ,@body)
+     (eval ,@body)))
 
 (defun object-type-node (key timestamp &rest facts) ; dummy impl
   (declare (ignore key timestamp facts)))
@@ -43,8 +46,11 @@
   "Returns the contents of <memory>."
   (gethash memory table))
 
-(defmacro store-activation (key token rule salience)
-  `(store ,key (make-activation :rule ,rule :salience ,salience :token ,token) *activations*))
+(defmacro store-activation (key token timestamp rule salience)
+  `(store ,key (make-activation :rule ,rule
+				:salience ,salience
+				:token ,token
+				:timestamp ,timestamp) *activations*))
 
 (defun store (key token memory &optional (table *memory*))
   (if (eq key '+)
