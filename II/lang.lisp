@@ -25,8 +25,6 @@
 (defparameter *fact-bindings* nil)
 (defparameter *variable-bindings* nil)
 
-(defvar *object-type-node* (make-hash-table))
-
 ;; These macros are the building blocks of the MPS rule language and they
 ;; expand into a bunch of defuns that represent the Rete network of the rules.
 
@@ -68,19 +66,6 @@
       (decf index))
     `(progn
        ,@result)))
-
-(defun make-object-type-node ()
-  (let ((body '()))
-    (maphash #'(lambda (key value)
-		 (let ((result '()))
-		   (dolist (v value)
-		     (push `(,v key fact timestamp) result))
-		   (push `(,key (progn ,@result)) body)))
-	     *object-type-node*)
-    (emit `(defun object-type-node (key timestamp &rest facts)
-	     (dolist (fact facts)
-	       (case (type-of fact)
-		 ,@body))))))
 
 (defun make-production-node (name)
   (emit `(defun ,(sym name "-left") (key token timestamp)
