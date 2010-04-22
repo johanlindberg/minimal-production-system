@@ -1,5 +1,5 @@
 ;; Minimal Production System II
-;; Compiler
+;; MPS to Common Lisp Compiler
 
 ;; Helper methods
 
@@ -189,9 +189,13 @@
 		    (let* ((token (append tok (list fact))))
 		      (when ,join-constraints
 			(store key token ',(sym name index "-beta-memory"))
-			(,(sym next "-left") key token timestamp)))))))
+			(,(sym next "-left") key token timestamp))))))
+	(top `(defun ,(sym name index "-right") (key fact timestamp)
+		(let* ((token (list fact)))
+		  (store key token ',(sym name index "-beta-memory"))
+		  (,(sym next "-left") key token timestamp)))))
     (emit (if (eq index 0)
-	      `(progn ,right)
+	      `(progn ,top)
 	      `(progn
 		 ,left
 		 ,right)))))
