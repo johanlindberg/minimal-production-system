@@ -57,6 +57,7 @@
 
 (defun store (key token memory &optional (table *memory*))
   (if (eq key '+)
+      ;; Add token
       (if (gethash memory table)
 	  (unless (member token (gethash memory table) :test #'equalp)
 	    (push token (gethash memory table)))

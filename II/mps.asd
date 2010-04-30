@@ -7,6 +7,6 @@
   :version "0.9"
   :author "Johan Lindberg <johan@pulp.se>"
   :licence "GPL"
-  :components ((:file "core")
-	       (:file "lang" :depends-on ("core"))))
+  :components ((:file "runtime")
+	       (:file "compiler" :depends-on ("runtime"))))
 
