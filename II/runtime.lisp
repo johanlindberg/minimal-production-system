@@ -99,3 +99,12 @@
 	(incf count)))
 
     count))
+
+(defun facts ()
+  "Returns all facts in Working Memory."
+  (let ((result '()))
+    (maphash #'(lambda (key value)
+		 (when (numberp value)
+		   (push key result)))
+	     *working-memory*)
+    result))
