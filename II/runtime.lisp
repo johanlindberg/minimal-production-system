@@ -3,10 +3,10 @@
 
 ;; Runtime data.
 
-(defvar *memory* (make-hash-table)) ; node memories
-(defvar *working-memory* (make-hash-table))
+(defvar *memory* (make-hash-table :test #'equalp)) ; node memories
+(defvar *working-memory* (make-hash-table :test #'equalp))
 
-(defvar *activations* (make-hash-table))
+(defvar *activations* (make-hash-table :test #'equalp))
 (defvar *object-type-node* (make-hash-table))
 
 (defvar *defrules* '())
@@ -41,6 +41,7 @@
 		      (case (type-of fact)
 			,@body)))))
     (emit func)))
+(make-object-type-node)
 
 ;; Memory access
 
@@ -56,6 +57,7 @@
 			   :timestamp ,timestamp)
 	  ,salience
 	  *activations*))
+
 (defun store (key token memory &optional (table *memory*))
   (if (eq key '+)
       ;; Add token
