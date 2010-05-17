@@ -27,6 +27,9 @@
   (let* ((rhs (member '=> body))
 	 (lhs (ldiff body rhs))
 	 (production-node-name (sym name "-production")))
+    (when (member name *defrules*)
+      (error "~&~A is already defined!" name))
+    (push name *defrules*)
     (setf *fact-bindings* (make-hash-table))
     (setf *variable-bindings* (make-hash-table))
     `(progn
