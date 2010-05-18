@@ -23,7 +23,7 @@
 ;; These macros are the building blocks of the MPS rule language and they
 ;; expand into a bunch of defuns that represent the Rete network of the rules.
 
-(defmacro defrule (name &optional (salience 0) &body body)
+(defmacro defrule (name &body body)
   (let* ((rhs (member '=> body))
 	 (lhs (ldiff body rhs))
 	 (production-node-name (sym name "-production")))
@@ -33,7 +33,7 @@
     (setf *fact-bindings* (make-hash-table))
     (setf *variable-bindings* (make-hash-table))
     `(progn
-       (make-production-node ',production-node-name ',name ',salience)
+       (make-production-node ',production-node-name ',name 0)
        (compile-lhs ,name ,production-node-name ,@lhs)
        (make-object-type-node) ; regenerate the object-type-node defun
        (compile-rhs ,name ,@(cdr rhs)))))
