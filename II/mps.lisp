@@ -100,27 +100,38 @@
   "Returns the contents of <memory>."
   (gethash memory table))
 
-(defmacro store-activation (key token timestamp rule salience)
-  `(store ,key
-	  (make-activation :rule ,rule
-			   :salience ,salience
-			   :token ,token
-			   :timestamp ,timestamp)
-	  ,salience
-	  *activations*))
+(defun store-activation (key token timestamp rule salience)
+  (let ((activation (make-activation :rule rule
+				     :salience salience
+				     :token token
+				     :timestamp timestamp)))
+    (if (eq key '+)
+	;; Add token
+	(if (gethash salience *activations*)
+	    (unless (member activation (gethash salience *activations*) :test #'equalp)
+	      (push activation (gethash salience *activations*)))
+	    (setf (gethash salience *activations*) (list activation)))
+	;; Remove token
+	(when (gethash salience *activations*)
+	  (setf (gethash salience *activations*)
+		(remove-if #'(lambda (item)
+			       (and (equalp (activation-rule item) rule)
+				    (equalp (activation-token item) token)))
+			   (gethash salience *activations*)))))))
 
-(defun store (key token memory &optional (table *memory*))
+(defun store (key token memory)
   (if (eq key '+)
       ;; Add token
-      (if (gethash memory table)
-	  (unless (member token (gethash memory table) :test #'equalp)
-	    (push token (gethash memory table)))
-	  (setf (gethash memory table) (list token)))
+      (if (gethash memory *memory*)
+	  (unless (member token (gethash memory *memory*) :test #'equalp)
+	    (push token (gethash memory *memory*)))
+	  (setf (gethash memory *memory*) (list token)))
       ;; Remove token
-      (when (gethash memory table)
-	(setf (gethash memory table) (remove-if #'(lambda (item)
-						    (equalp item token))
-						(gethash memory table))))))
+      (when (gethash memory *memory*)
+	(setf (gethash memory *memory*)
+	      (remove-if #'(lambda (item)
+			     (equalp item token))
+			 (gethash memory *memory*))))))
 
 ;; Working memory
 
