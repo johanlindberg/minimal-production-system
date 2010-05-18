@@ -41,7 +41,7 @@
 		      (case (type-of fact)
 			,@body)))))
     (emit func)))
-(make-object-type-node)
+(make-object-type-node) ; wrap this in (eval-when ...) ?
 
 ;; Memory access
 
@@ -138,3 +138,11 @@
     (setf *current-fact-index* 0)
 
     t)
+
+(defun reset ()
+  "Resets the engine."
+  (clrhash *working-memory*)
+  (clrhash *memory*)
+  (clrhash *activations*)
+
+  t)
