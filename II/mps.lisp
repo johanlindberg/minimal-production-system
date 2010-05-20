@@ -16,18 +16,18 @@
 
 (defpackage :MPS
   (:use :cl)
-  (:export "=>"           ; MPS symbols
+  (:export "=>"           ; symbols
 
-	   :assert-facts  ; level 0 functionality
+	   :assert-facts  ; public API
 	   :retract-facts
-	   :run
+	   :run           ; TBD
 
 	   :defrule
 
-	   :agenda        ; level 1 functionality
+	   :agenda
 	   :clear
 	   :facts
-	   :modify-facts
+	   :modify-fact
 	   :reset
 	   
 	   :deffacts))
@@ -184,17 +184,38 @@
 	     *working-memory*)
     result))
 
+;; Engine functions
+
+(defun order-by-salience (conflict-set)
+  (stable-sort conflict-set #'(lambda (activation1 activation2)
+				(> (activation-salience activation1)
+				   (activation-salience activation2)))))
+(defun depth (conflict-set)
+  (stable-sort conflict-set
+	       #'(lambda (activation1 activation2)
+		   (> (activation-timestamp activation1)
+		      (activation-timestamp activation2)))))
+
+(defun conflict-set ()
+  (let ((result '()))
+    (maphash #'(lambda (k v)
+		 (declare (ignore k))
+		 (push v result))
+	     *activations*)
+    result))
+			
+(defun agenda ()
+  "Return the current agenda."
+  (depth (order-by-salience (conflict-set))))
+
 (defun clear ()
   "Clears the engine."
-  (clrhash *memory*)
-  (clrhash *working-memory*)
-
-  (clrhash *activations*)
+  (reset)
 
   (clrhash *object-type-node*)
   (make-object-type-node)
 
-  (setf *defrules* '())
+  (setf *defrules* '()) ; undef all generated functions?
 
   (setf *current-timestamp* 0)
   (setf *current-fact-index* 0)
