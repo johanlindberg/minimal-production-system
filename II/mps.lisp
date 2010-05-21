@@ -18,19 +18,17 @@
   (:use :cl)
   (:export "=>"           ; symbols
 
-	   :assert-facts  ; public API
-	   :retract-facts
-	   :run           ; TBD
-
-	   :defrule
-
-	   :agenda
+	   :agenda        ; public API
+	   :assert-facts
 	   :clear
+	   :deffacts
+	   :defrule
 	   :facts
+	   :halt
 	   :modify-fact
 	   :reset
-	   
-	   :deffacts))
+	   :retract-facts
+	   :run))
 (in-package :MPS)
 
 ;; Helper methods
@@ -202,9 +200,10 @@
 
 (defun conflict-set ()
   (let ((result '()))
-    (maphash #'(lambda (k v)
-		 (declare (ignore k))
-		 (push v result))
+    (maphash #'(lambda (salience activations)
+		 (declare (ignore salience))
+		 (dolist (activation activations)
+		   (push activation result)))
 	     *activations*)
     result))
 			
@@ -238,6 +237,28 @@
   (apply #'assert-facts *deffacts*)
 
   t)
+
+(let ((limit -1))
+  (defun run (&optional (n -1))
+    "Run"
+    (setf limit n)
+    (do* ((curr-agenda (agenda) (agenda))
+	  (execution-count 0 (+ execution-count 1)))
+	 ((or (eq limit 0)
+	      (eq (length curr-agenda) 0)) execution-count)
+      (decf limit)
+      (let* ((activation (first curr-agenda))
+	     (token (activation-token activation))
+	     (timestamp (activation-timestamp activation))
+	     (rule (activation-rule activation))
+	     (salience (activation-salience activation))
+	     (action (sym (activation-rule activation) "-rhs")))
+	(funcall action token)
+	(store-activation '- token timestamp rule salience))))
+
+  (defun halt ()
+    "Halt"
+    (setf limit 0)))
 
 ;; These macros are the building blocks of the MPS rule language and they
 ;; expand into a bunch of defuns that represent the Rete network of the rules.
