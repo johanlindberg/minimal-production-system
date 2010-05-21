@@ -61,6 +61,7 @@
 (defvar *object-type-node* (make-hash-table))
 
 (defvar *defrules* '())
+(defvar *deffacts* '())
 
 (defvar *current-timestamp* 0)
 (defvar *current-fact-index* 0)
@@ -175,6 +176,9 @@
 
     count))
 
+(defun deffacts (&rest facts)
+  (setf *deffacts* (append *deffacts* facts)))
+
 (defun facts ()
   "Returns all facts in Working Memory."
   (let ((result '()))
@@ -210,12 +214,15 @@
 
 (defun clear ()
   "Clears the engine."
-  (reset)
+  (clrhash *working-memory*)
+  (clrhash *memory*)
+  (clrhash *activations*)
 
   (clrhash *object-type-node*)
   (make-object-type-node)
 
   (setf *defrules* '()) ; undef all generated functions?
+  (setf *deffacts* '())
 
   (setf *current-timestamp* 0)
   (setf *current-fact-index* 0)
@@ -227,6 +234,8 @@
   (clrhash *working-memory*)
   (clrhash *memory*)
   (clrhash *activations*)
+
+  (apply #'assert-facts *deffacts*)
 
   t)
 
