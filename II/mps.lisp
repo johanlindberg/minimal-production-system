@@ -25,7 +25,7 @@
 	   :defrule
 	   :facts
 	   :halt
-	   :modify-fact
+	   :modify-facts
 	   :reset
 	   :retract-facts
 	   :run))
@@ -45,6 +45,11 @@
       (setf result (string-upcase (format nil "~A~A" result part))))
     (intern result)))
 
+(defmacro emit (&body body)
+  `(progn
+     (print ,@body)
+     (eval ,@body)))
+
 ;; Compilation data.
 
 (defparameter *fact-bindings* nil)
@@ -52,7 +57,7 @@
 
 ;; Runtime data.
 
-(defvar *memory* (make-hash-table :test #'equalp)) ; node memories
+(defvar *memory* (make-hash-table :test #'equalp)) ; Rete Network node memories
 (defvar *working-memory* (make-hash-table :test #'equalp))
 
 (defvar *activations* (make-hash-table :test #'equalp))
@@ -60,6 +65,8 @@
 
 (defvar *defrules* '())
 (defvar *deffacts* '())
+
+(defvar *conflict-resolution-strategy* #'depth)
 
 (defvar *current-timestamp* 0)
 (defvar *current-fact-index* 0)
@@ -69,11 +76,6 @@
   salience
   token
   timestamp)
-
-(defmacro emit (&body body)
-  `(progn
-     (print ,@body)
-     (eval ,@body)))
 
 (defun make-object-type-node ()
   (let ((body '())
@@ -152,15 +154,19 @@
 
     count))
 
-(defmacro modify-fact (fact modifier-fn)
+(defmacro modify-facts (modifier-fn &rest facts)
   "Modifies a <fact> in Working Memory as specified in <modifier-fn>.
 
    <modifier-fn> needs to be a function that takes one argument (fact)."
-  (let ((temp-reference (gensym)))
-    `(let ((,temp-reference ,fact))
-       (retract-facts ,temp-reference)
-       (funcall ,modifier-fn ,fact)
-       (assert-facts ,temp-reference))))
+  (let ((result '()))
+    (dolist (fact facts)
+      (let ((temp-reference (gensym)))
+	(push `(let ((,temp-reference ,fact))
+		 (retract-facts ,temp-reference)
+		 (funcall ,modifier-fn ,temp-reference)
+		 (assert-facts ,temp-reference))
+	      result)))
+    `(progn ,@result)))
 
 (defun retract-facts (&rest fact-list)
   "Removes facts in <fact-list> from the Working Memory and Rete Network."
@@ -193,7 +199,7 @@
 				(> (activation-salience activation1)
 				   (activation-salience activation2)))))
 (defun depth (conflict-set)
-  (stable-sort conflict-set
+  (stable-sort (order-by-salience conflict-set)
 	       #'(lambda (activation1 activation2)
 		   (> (activation-timestamp activation1)
 		      (activation-timestamp activation2)))))
@@ -208,8 +214,7 @@
     result))
 			
 (defun agenda ()
-  "Return the current agenda."
-  (depth (order-by-salience (conflict-set))))
+  (funcall *conflict-resolution-strategy* (conflict-set)))
 
 (defun clear ()
   "Clears the engine."
