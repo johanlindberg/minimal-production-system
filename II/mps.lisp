@@ -66,7 +66,7 @@
 (defvar *defrules* '())
 (defvar *deffacts* '())
 
-(defvar *conflict-resolution-strategy* #'depth)
+(defvar *conflict-resolution-strategy* 'nil)
 
 (defvar *current-timestamp* 0)
 (defvar *current-fact-index* 0)
@@ -106,33 +106,27 @@
 				     :salience salience
 				     :token token
 				     :timestamp timestamp)))
-    (if (eq key '+)
-	;; Add token
-	(if (gethash salience *activations*)
-	    (unless (member activation (gethash salience *activations*) :test #'equalp)
-	      (push activation (gethash salience *activations*)))
-	    (setf (gethash salience *activations*) (list activation)))
-	;; Remove token
-	(when (gethash salience *activations*)
-	  (setf (gethash salience *activations*)
-		(remove-if #'(lambda (item)
-			       (and (equalp (activation-rule item) rule)
-				    (equalp (activation-token item) token)))
-			   (gethash salience *activations*)))))))
+    (store key activation salience
+	   *activations*
+	   #'(lambda (i)
+	       (and (equalp (activation-rule i) rule)
+		    (equalp (activation-token i) token))))))
 
-(defun store (key token memory)
+(defun store (key item memory
+	      &optional
+	      (table *memory*)
+	      (removal-fn #'(lambda (i)
+			      (equalp i item))))
   (if (eq key '+)
-      ;; Add token
-      (if (gethash memory *memory*)
-	  (unless (member token (gethash memory *memory*) :test #'equalp)
-	    (push token (gethash memory *memory*)))
-	  (setf (gethash memory *memory*) (list token)))
-      ;; Remove token
-      (when (gethash memory *memory*)
-	(setf (gethash memory *memory*)
-	      (remove-if #'(lambda (item)
-			     (equalp item token))
-			 (gethash memory *memory*))))))
+      ;; Add item
+      (if (gethash memory table)
+	  (unless (member item (gethash memory table) :test #'equalp)
+	    (push item (gethash memory table)))
+	  (setf (gethash memory table) (list item)))
+      ;; Remove item
+      (when (gethash memory table)
+	(setf (gethash memory table)
+	      (remove-if removal-fn (gethash memory table))))))
 
 ;; Working memory
 
@@ -158,15 +152,18 @@
   "Modifies a <fact> in Working Memory as specified in <modifier-fn>.
 
    <modifier-fn> needs to be a function that takes one argument (fact)."
-  (let ((result '()))
+  (let ((let-bindings '())
+	(gensyms '())
+	(modifier-calls '()))
     (dolist (fact facts)
       (let ((temp-reference (gensym)))
-	(push `(let ((,temp-reference ,fact))
-		 (retract-facts ,temp-reference)
-		 (funcall ,modifier-fn ,temp-reference)
-		 (assert-facts ,temp-reference))
-	      result)))
-    `(progn ,@result)))
+	(push `(,temp-reference ,fact) let-bindings)
+	(push temp-reference gensyms)
+	(push `(funcall ,modifier-fn ,temp-reference) modifier-calls)))
+    `(let (,@let-bindings)
+       (retract-facts ,@gensyms)
+       ,@modifier-calls
+       (assert-facts ,@gensyms))))
 
 (defun retract-facts (&rest fact-list)
   "Removes facts in <fact-list> from the Working Memory and Rete Network."
@@ -203,6 +200,7 @@
 	       #'(lambda (activation1 activation2)
 		   (> (activation-timestamp activation1)
 		      (activation-timestamp activation2)))))
+(setf *conflict-resolution-strategy* #'depth)
 
 (defun conflict-set ()
   (let ((result '()))
