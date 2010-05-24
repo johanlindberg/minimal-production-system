@@ -28,7 +28,8 @@
 	   :modify-facts
 	   :reset
 	   :retract-facts
-	   :run))
+	   :run
+	   :salience))
 (in-package :MPS)
 
 ;; Helper methods
@@ -52,6 +53,7 @@
 
 ;; Compilation data.
 
+(defparameter *salience* 0)
 (defparameter *fact-bindings* nil)
 (defparameter *variable-bindings* nil)
 
@@ -149,7 +151,7 @@
     count))
 
 (defmacro modify-facts (modifier-fn &rest facts)
-  "Modifies a <fact> in Working Memory as specified in <modifier-fn>.
+  "Modifies <facts> in Working Memory as specified in <modifier-fn>.
 
    <modifier-fn> needs to be a function that takes one argument (fact)."
   (let ((let-bindings '())
@@ -273,19 +275,29 @@
     (when (member name *defrules*)
       (error "~&~A is already defined!" name))
     (push name *defrules*)
+    (setf *salience* 0)
     (setf *fact-bindings* (make-hash-table))
     (setf *variable-bindings* (make-hash-table))
     `(progn
-       (make-production-node ',production-node-name ',name 0)
        (compile-lhs ,name ,production-node-name ,@lhs)
        (make-object-type-node) ; regenerate the object-type-node defun
+       (make-production-node ',production-node-name ',name)
        (compile-rhs ,name ,@(cdr rhs)))))
 
-(defmacro compile-lhs (name end-node-name &rest conditional-elements)
+(defmacro compile-lhs (name end-node-name &rest contents)
   (let ((result '())
+	(conditional-elements '())
 	(next-node-name nil)
-	(index (- (length conditional-elements) 1)))
-    (dolist (ce (reverse conditional-elements))
+	(index 0))
+    (dolist (ce contents)
+      (case (car ce) ;; Dispatch on meta data (salience)
+	(salience
+	 (setf *salience* (cadr ce)))
+	(otherwise
+	 (push ce conditional-elements))))
+
+    (setf index (- (length conditional-elements) 1))
+    (dolist (ce conditional-elements)
       (if (eq index (- (length conditional-elements) 1))
 	  (setf next-node-name end-node-name)
 	  (setf next-node-name (sym name (+ index 1))))
@@ -308,9 +320,9 @@
     `(progn
        ,@result)))
 
-(defun make-production-node (name rule salience)
+(defun make-production-node (name rule)
   (emit `(defun ,(sym name "-left") (key token timestamp)
-	   (store-activation key token timestamp ',rule ',salience))))
+	   (store-activation key token timestamp ',rule ',*salience*))))
 
 (defmacro compile-not-ce (name index next conditional-elements)
   `(progn
