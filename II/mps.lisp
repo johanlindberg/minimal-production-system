@@ -218,7 +218,15 @@
   (funcall *conflict-resolution-strategy* (conflict-set)))
 
 (defun clear ()
-  "Clears the engine."
+  "Clears the engine.
+
+   Clear removes all facts from working memory, the conflict set and the
+   Rete Network node memories. It also clears the object type node, any
+   deffacts forms and all counters (fact index and timestamp).
+
+   The list of defined rules is cleared but the functions generated from
+   evaluating any defrule forms will still exist in current package name
+   space."
   (clrhash *working-memory*)
   (clrhash *memory*)
   (clrhash *activations*)
@@ -235,7 +243,11 @@
   t)
 
 (defun reset ()
-  "Resets the engine."
+  "Resets the engine.
+
+   Reset clears the working memory, the conflict set and the Rete Network
+   memory nodes. If there are any deffacts forms available they will be
+   re-asserted."
   (clrhash *working-memory*)
   (clrhash *memory*)
   (clrhash *activations*)
