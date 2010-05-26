@@ -1,5 +1,5 @@
 ;;; Minimal Production System (MPS)
-;;; Copyright (C) 2008-2009 Johan Lindberg, Pulp Software
+;;; Copyright (C) 2008-2010 Johan Lindberg, Pulp Software
 
 ;;; This program is free software: you can redistribute it and/or modify
 ;;; it under the terms of the GNU General Public License as published by
@@ -197,6 +197,7 @@
   (stable-sort conflict-set #'(lambda (activation1 activation2)
 				(> (activation-salience activation1)
 				   (activation-salience activation2)))))
+
 (defun depth (conflict-set)
   (stable-sort (order-by-salience conflict-set)
 	       #'(lambda (activation1 activation2)
@@ -212,7 +213,7 @@
 		   (push activation result)))
 	     *activations*)
     result))
-			
+
 (defun agenda ()
   (funcall *conflict-resolution-strategy* (conflict-set)))
 
@@ -309,8 +310,6 @@
 	(otherwise
 	 (progn
 	   ;; If a CE starts with a variable it is assumed to be a fact binding.
-	   ;; NOTE! The <- operator which is used in MPS is not available.
-	   ;; ?foo <- (foo ...) in MPS is written as (?foo (foo ...)) in MPS II.
 	   (when (variablep (car ce))
 	     (setf (gethash (car ce) *fact-bindings*)
 		   `(,(car ce) (nth ,index token)))
